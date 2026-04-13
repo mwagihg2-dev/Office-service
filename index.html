@@ -1,741 +1,3 @@
-
-ودي اسوي تطبيق للتي بويز الي عندنا يسهل عميله الطلب في المكتب  هل هذا الشي ممكن ويصير ننزله على جوالاتهم ويعطيهم تنبيه برقم المكتب واسم الشخص والطلب واي اقتراحات ثانيه انت تشوفها ويكون بالانجليزي والاوردو
-
-Apr 12
-فكرة ممتازة. خليني أوضح الواقع أول، بعدين أعطيك الاقتراحات.
-
-الممكن الآن — فوري بدون تطوير: تطبيق ويب (HTML/PWA) يشتغل من المتصفح على أي جوال، ما يحتاج تنزيل من App Store. يشتغل offline جزئياً، وممكن يضاف على الشاشة الرئيسية كأيقونة.
-
-التنبيهات (Push Notifications): تحتاج سيرفر — مش ممكن بـ HTML ثابت لحاله. لكن في بديل عملي: واتساب / تيليجرام بوت يستقبل الطلب ويرسل رسالة فورية للمسؤول.
-
-مقترح النظام الكامل:
-
-التيم بوي → يفتح الويب أب → يختار:
-  - رقم المكتب
-  - اسم الشخص (اختياري)
-  - نوع الطلب (شاي / قهوة / ماء / غيره)
-  - ملاحظة
-
-→ يضغط Send
-→ رسالة واتساب / تيليجرام تروح للمسؤول فيها كل التفاصيل
-قبل ما أبني، أحتاج أعرف:
-
-كم عدد المكاتب أو الغرف؟
-في شخص مسؤول يستقبل الطلبات، ولا كل طلب يروح لصاحب المكتب مباشرة؟
-تبي التنبيه يجي على واتساب؟ تيليجرام؟ أو بس صفحة Admin Dashboard يشوفها المسؤول؟
-الطلبات ثابتة (شاي، قهوة، ماء) أو تبي يكتبون أي طلب حر؟
-ليش ما نبنيها على github و supabase
-
-Apr 12
-صح تماماً، هذا الخيار الأقوى. خليني أوضح الصورة الكاملة:
-
-Stack المقترح:
-
-Frontend  → HTML/CSS/JS  (hosted on GitHub Pages)
-Backend   → Supabase     (Database + Realtime + Auth)
-Notifications → Supabase Realtime → Admin Dashboard يتحدث لحظياً
-ليش هذا الكومبو تحديداً:
-
-الميزة	التفاصيل
-GitHub Pages	مجاني، رابط ثابت، يتحدث بكل push
-Supabase Realtime	الطلب يظهر عند المسؤول فوراً بدون refresh
-Supabase DB	سجل كامل لكل الطلبات
-Supabase Auth	تسجيل دخول للأدمن
-PWA	ينحط على شاشة الجوال كأيقونة
-الصفحات المطلوبة:
-
-صفحة التيم بوي — يختار المكتب + الطلب + يرسل
-Admin Dashboard — يشوف الطلبات الجديدة realtime + يعلم "تم"
-بس أحتاج نفس الأسئلة قبل البناء:
-
-كم مكتب؟ وهل الأسماء ثابتة أو تتغير؟
-الطلبات — قائمة ثابتة أو حرة؟
-الأدمن — شخص واحد أو أكثر يشوف الطلبات؟
-مكاتب كثيره وطوابق عده لكن انا ودي اجرب اول شي على مكتبي
-
-Apr 12
-عال، نبدأ بمكتبك كـ pilot ثم نوسع.
-
-قبل ما أبني، 3 أسئلة سريعة:
-
-Q: الطلبات — نوعها؟ (Select all that apply)
-A: شاي عادي - شاي نعناع - شاي حبق. - شاي نعناع وحبق  - قهوة تركي - قهوه سودا - قهوه بالحليب - تفضيلات ثانيه زي عدد ملاعق السكر هل هو دايت او لا - هل هو في كاستي الخاصه ام الورق - او مثلا احتاجه يجيب الطلبات من تحت ويطلعها - او يحطبها بالثلاجة
-
-Q: الأدمن Dashboard — من يستخدمه؟
-A: انا والتي بوي لكن انا عندي اكسس اوسع
-
-Q: تسجيل الدخول للأدمن؟
-A: باسورد بسيط بدون إيميل
-
-Apr 12
-واضح. نظام متكامل. خليني أرسم الصورة الكاملة قبل البناء:
-
-النظام — 3 واجهات:
-
-1. Team Boy App (الجوال) طلبات الشاي والقهوة بكل التفضيلات + مهام (جيب من تحت، حط بالثلاجة، إلخ)
-
-2. Admin Dashboard — Moe (أوسع صلاحية) كل الطلبات + إدارة القائمة + تاريخ + إحصائيات
-
-3. Team Boy Dashboard (محدود) يشوف طلباته فقط + يعلم "تم"
-
-تفاصيل الطلبات اللي ذكرتها:
-
-الشاي:
-  - عادي / نعناع / حبق / نعناع+حبق
-  
-القهوة:
-  - تركي / سودا / بالحليب
-  
-تفضيلات:
-  - عدد ملاعق السكر (0-3)
-  - دايت أو لا
-  - كاستي الخاصة أم ورق
-
-مهام:
-  - جيب طلبات من تحت
-  - حط بالثلاجة
-  - نص حر
-التقنية:
-
-GitHub Pages — hosting مجاني
-Supabase — DB + Realtime (الطلب يظهر فوراً)
-باسورد بسيط — بدون Auth معقد
-جاهز أبدأ البناء؟ أو في شي تضيفه أو تعدله في القائمة؟
-
-تمام ولا تنسى ان يكون يدعم اللغات التاليه  العربيه والانجليزيه والاوردو.. واجهة دخول سهلة .. ولا تنسى اصدار صوت تنبيه عند تلقي الطلب
-
-Apr 12
-تمام. أبدأ الآن.
-
-النظام واسع، خليني أبنيه كـ HTML app كامل — Team Boy interface + Admin Dashboard في نفس الملف مع language switcher.
-
-
-
-النظام جاهز. إليك التفاصيل:
-
-Pins للدخول:
-
-Team Boy → 1234
-Admin → 9999
-ما يدعمه النظام:
-
-3 لغات كاملة (EN / AR / UR) مع RTL تلقائي للعربي والأردو
-كل أنواع الشاي والقهوة اللي ذكرتها
-تفضيلات: دايت، كاستي، ملاعق السكر
-مهام: جيب من تحت، ثلاجة، طباعة
-Admin Dashboard بإحصائيات + فلتر + زر "تم"
-صوت تنبيه عند وصول طلب جديد (3 نبضات)
-الخطوة التالية — Supabase + GitHub:
-
-هل تبي أبني الكود الكامل بالـ Supabase integration بحيث الطلبات تتزامن real-time بين الأجهزة؟ أو نجرب الـ prototype هذا أول ونعدل عليه؟
-
-غير شاشه الباسسوورد خليها شاشه دخول فقط بثلاث خيارات موظف او تي بوي او ادمن وخلي الادمن بباسوورد مخفي  ، صفحة التي بوي تكون فيها استلام الطلبات وتوقيت الطلب والمعلومات وفيها صوت نغمه ارسال الطلب ما تنطفي الا اذا ضغط تم الاستلام بالاضافه انك تعطيه الامكانيه انه يقدر يظلل الاشيا الغير متوفره عنده  ، وصفحة الم،ظف فيها لمنيو وشيل طباعه الاوراق ذي مالها داعي ، وصفحة الادمن فيها كل شي  يخص الادمن ، وضيف اللغه الهندية بدل الاوردو
-
-Apr 12
-فاهم الصورة كاملة. أبدأ الآن ببناء النسخة الجديدة.
-
-
-
-النسخة الثانية جاهزة. ملخص ما تغير:
-
-شاشة الدخول — 3 بطاقات واضحة: موظف / تيم بوي / أدمن. الأدمن بـ PIN مخفي 9999
-
-صفحة الموظف — المنيو الكامل + التفضيلات، بدون طباعة
-
-صفحة التيم بوي — استقبال الطلبات بصوت تنبيه متكرر لا يتوقف إلا بضغطة "تم الاستلام"، مع إمكانية تعليم الأصناف الغير متوفرة من نفس الصفحة
-
-صفحة الأدمن — إحصائيات + إدارة الطلبات + إدارة المنيو (تفعيل/تعطيل كل صنف) + مسح الطلبات المكتملة
-
-الخطوة الجاية — تبي نبنيه كـ GitHub + Supabase بحيث يشتغل على أجهزة مختلفة بشكل حقيقي real-time؟
-
-احتاجها صفحة موقع على سفاري اقدر افتحها
-
-Apr 12
-تمام، أبني الملف الكامل وأنزله لك.
-
-
-Viewed a file, created a file, read a file
-Viewed a file, created a file, read a file
-الملف جاهز للتنزيل ⬆️
-
-طريقة الاستخدام على سفاري:
-
-نزّل الملف
-افتحه في سفاري
-من سفاري: Share → Add to Home Screen — يصير أيقونة على الجوال مثل أي تطبيق
-PIN الأدمن: 9999
-
-ملاحظة مهمة: الطلبات تُحفظ محلياً على الجهاز (localStorage) — لو تبي الطلبات تظهر بين جهازين بشكل real-time، نحتاج Supabase. تبي نكمل في تلك الخطوة؟
-
-
-Office service
-Code · HTML 
-الادمن ابيك تخفيه يكون مثلا  عبر خمس ضغطات مستمره على ايقونه القهوه ويطلع لي طلب الباسوورد وادخل عليه .. في اخطا في النصوص عندك .. قهوه سودا يعني سوداء، مايطلع صوت عند ارسال الطلب وعند استلام الطلب من التي بوي ،+ احتاج وضع دارك مود للصفحة -  ..
-
-Apr 12
-فاهم كل النقاط. أبدأ الآن.
-
-
-Read current file
-Read current file
-الآن أبني النسخة المحدّثة كاملة:
-
-
-Created 2 files, ran a command, read a file
-Created 2 files, ran a command, read a file
-جاهز ⬆️ كل التعديلات طُبّقت:
-
-التغييرات:
-
-الأدمن مخفي تماماً — 5 ضغطات متتالية على أيقونة ☕ تظهر نقاط أرجوانية تتضيء واحدة بواحدة، ثم تطلع نافذة PIN
-قهوة سوداء — صُحّح النص في العربية والإنجليزية والهندية
-صوت الإرسال — نغمة تصاعدية ناعمة عند ضغط "Send Order"
-صوت الاستقبال — تنبيه متكرر عند وصول طلب جديد للتيم بوي، لا يتوقف إلا بضغط "Received ✓"
-دارك مود — زر ثابت في الأعلى يحفظ الاختيار بين الجلسات
-
-Office service
-Code · HTML 
-Screenshot 2026-04-12 at 10.28.16 PM.png
-الادمن غير مخفي ان تحته خمس نقاط تفضحه + احتاج ان التطبيق يكون فيه صوت يصدره عند استلام الطلب في قسم التي بوي
-
-Apr 12
-واضح. النقاط تفضحه، وأضيف التنبيه الصوتي للتيم بوي. أصلح الاثنين.
-
-
-Viewed 2 files
-Viewed 2 files
-عندي كل اللي أحتاجه. تعديلان فقط:
-
-النقاط — أخليها بنفس لون الخلفية (مخفية تماماً)، تضيء فقط عند الضغط
-صوت التيم بوي — أتأكد إنه يشتغل فعلاً عند استقبال الطلب
-
-Hide tap dots by making them invisible until lit
-Hide tap dots by making them invisible until lit
-الآن أتحقق من دالة triggerAlert والـ interval عشان أضمن الصوت يشتغل صح:
-
-
-Viewed 2 files
-Viewed 2 files
-المشكلة واضحة — Safari يمنع تشغيل الصوت إلا بعد تفاعل مباشر من المستخدم. التيم بوي يفتح الصفحة وينتظر، فالصوت لا يُشغَّل لأن AudioContext يحتاج لمسة يد على الشاشة أولاً. الحل: أضيف "unlock" للصوت عند أول ضغطة على الشاشة.
-
-
-Edited a file, read a file
-Edited a file, read a file
-جاهز ⬆️
-
-اللي تغير:
-
-النقاط اختفت تماماً — شفافة بالكامل، تضيء بالأرجواني فقط عند الضغط، لا أحد يلاحظها
-الصوت في Safari — المشكلة كانت أن Safari يحجب AudioContext حتى يلمس المستخدم الشاشة. الآن يُفتح تلقائياً عند أول لمسة، والتنبيه يشتغل بشكل مضمون عند وصول الطلب للتيم بوي
-
-Office service
-Code · HTML 
-طيب كيف ارفعها على github الحين
-
-Apr 12
-خطوات بسيطة:
-
-1. سجّل دخول أو أنشئ حساب github.com → Sign up (مجاني)
-
-2. أنشئ Repository جديد
-
-اضغط + → New repository
-الاسم: office-service (أو أي اسم)
-اضغط Public
-فعّل ✅ Add a README file
-اضغط Create repository
-3. ارفع الملف
-
-داخل الـ repo اضغط Add file → Upload files
-ارفع ملف office-service.html
-مهم جداً: غيّر اسم الملف إلى index.html قبل الرفع — أو بعد الرفع عبر Rename
-اضغط Commit changes
-4. فعّل GitHub Pages
-
-اذهب لـ Settings → Pages (من القائمة الجانبية)
-تحت Source اختر: Deploy from a branch
-Branch: main — Folder: / (root)
-اضغط Save
-5. رابطك الجاهز بعد دقيقة يظهر الرابط:
-
-https://[username].github.io/office-service/
-افتحه على سفاري، وحطّه على الـ Home Screen من Share → Add to Home Screen.
-
-تبي أساعدك بأي خطوة؟
-
-تمام سويتها ..
-
-10:51 AM
-ممتاز! شاركني الرابط أشوفه على المتصفح وأتأكد إن كل شي شغال صح — الصوت، النقاط، الدارك مود، وباقي الوظائف.
-
-كيف اطلع الراب
-
-10:51 AM
-Settings → Pages
-
-الرابط يكون موجود في الأعلى مباشرة تحت "Your site is live at"
-
-https://[username].github.io/office-service/
-لو ما ظهر بعد، انتظر دقيقتين وارجع refresh الصفحة — Pages تحتاج وقت بسيط أول مرة.
-
-Screenshot 2026-04-13 at 10.52.36 AM.png
-؟
-
-10:53 AM
-شايف الـ repo. اضغط على github-pages اللي تحت Deployments — يفتح لك الرابط مباشرة.
-
-أو الرابط مباشرة:
-
-https://mwagihg2-dev.github.io/moe-gym/
-الشاشه اختلفت الوانها الانترفيس .. مو زي م انت وريتين ي فيها الوان وتدرجات وشكل الطف
-
-10:55 AM
-هذا لأن الملف اللي على GitHub هو نسخة قديمة رفعتها أنت يدوياً — مو آخر نسخة بنيناها.
-
-الحل بسيط:
-
-1. نزّل آخر ملف من هنا ⬆️ (الملف اللي أرسلته قبل شوي)
-
-2. روح الـ repo على GitHub
-
-اضغط على index.html
-اضغط أيقونة القلم ✏️ Edit
-احذف كل المحتوى
-افتح الملف الجديد بـ Notepad أو أي text editor، حدد كل شي Cmd+A ثم copy
-الصق في GitHub
-اضغط Commit changes
-أو الأسهل:
-
-اضغط Add file → Upload files
-ارفع الملف الجديد باسم index.html
-GitHub يسألك تأكيد — اختر replace أو اكتب في commit message أي شي
-اضغط Commit changes
-بعد دقيقة الموقع يتحدث تلقائياً.
-
-اعطيني كود الصفحه من جديد
-
-10:56 AM
-
-Viewed a file, read a file
-Viewed a file, read a file
-الملف جاهز ⬆️
-
-طريقة التحديث على GitHub:
-
-افتح الـ repo → اضغط على index.html
-اضغط أيقونة القلم ✏️
-حدد كل الكود Cmd+A واحذفه
-افتح الملف اللي نزّلته، حدد كله Cmd+A ثم copy والصقه
-اضغط Commit changes
-بعد دقيقة الموقع يتحدث.
-
-
-Office service
-Code · HTML 
-Screenshot 2026-04-13 at 10.57.07 AM.png
-شوف كيف تطلع حتى الازرار مختلفه
-
-10:57 AM
-الصفحة شغالة بس المشكلة واضحة — الـ role cards ما فيها border أو background يبيّنها على الخلفية الداكنة. تبان كأنها فاضية.
-
-أصلح هذا الآن:
-
-
-Edited 3 files, read a file
-Edited 3 files, read a file
-جاهز ⬆️ حدّث الـ index.html على GitHub بنفس الطريقة — الكروت والأزرار الآن تبان واضحة في الدارك مود.
-
-
-Office service
-Code · HTML 
-كيف اربط https://supabase.com/
-
-11:00 AM
-خطوات واضحة:
-
-1. أنشئ مشروع على Supabase
-
-روح supabase.com → New Project
-اختر اسم: office-service
-حدد region: Middle East (Bahrain) — أقرب لجدة
-اضغط Create Project
-2. أنشئ الجدول
-
-من القائمة اليسار → Table Editor → New Table
-الاسم: orders
-أضف هذه الأعمدة:
-Column	Type	Default
-id	int8	auto
-office	text	
-person	text	
-drink	text	
-tasks	text	
-note	text	
-diet	bool	false
-own_cup	bool	false
-sugar	int2	0
-status	text	new
-created_at	timestamptz	now()
-فعّل Row Level Security = OFF (للتجربة الأولى)
-اضغط Save
-3. خذ مفاتيح المشروع
-
-Settings → API
-انسخ:
-Project URL
-anon public key
-4. أعطيني المفتاحين وأنا أدمج Supabase في الكود مباشرة — الطلبات تصير real-time بين كل الأجهزة.
-
-اعطيني التيبل في csv
-
-11:04 AM
-انسخ هذا وارفعه كملف orders.csv على Supabase من Table Editor → Import CSV:
-
-csv
-id,office,person,drink,tasks,note,diet,own_cup,sugar,status,created_at
-هذا السطر الوحيد اللي تحتاجه — headers فقط بدون بيانات، Supabase يقرأها ويبني الجدول تلقائياً.
-
-لكن الأسهل والأضمن — اذهب لـ SQL Editor في Supabase والصق هذا:
-
-sql
-create table orders (
-  id bigint generated always as identity primary key,
-  office text not null,
-  person text,
-  drink text,
-  tasks text,
-  note text,
-  diet boolean default false,
-  own_cup boolean default false,
-  sugar smallint default 0,
-  status text default 'new',
-  created_at timestamptz default now()
-);
-
-alter table orders enable row level security;
-
-create policy "Allow all" on orders
-  for all using (true) with check (true);
-اضغط Run — الجدول جاهز في ثانية، مع RLS مفتوح للكل مبدئياً.
-
-بعدها أعطيني الـ Project URL و anon key وأدمجهم في الكود.
-
-Screenshot 2026-04-13 at 11.05.22 AM.png
-11:05 AM
-الجدول موجود أصلاً من قبل. شغّل هذا بدله:
-
-sql
-alter table orders enable row level security;
-
-create policy "Allow all" on orders
-  for all using (true) with check (true);
-فقط هذين السطرين — الجدول جاهز، نحتاج فقط نفعّل الـ policy.
-
-بعدها روح Settings → API وأعطيني الـ Project URL و anon public key.
-
-اضيفه على الي عندي ولا امسخ الي عندي واضيف الي توك رسلت
-
-11:06 AM
-اضغط Run على هذا فقط بدون ما تمسح شي:
-
-sql
-alter table orders enable row level security;
-
-create policy "Allow all" on orders
-  for all using (true) with check (true);
-الجدول الموجود يبقى كما هو — هذا فقط يضيف الـ policy عليه.
-
-Screenshot 2026-04-13 at 11.07.04 AM.png
-11:07 AM
-الكود القديم لازال موجود في الـ editor. امسح كل شي في الـ editor وحط هذا فقط:
-
-sql
-alter table orders enable row level security;
-
-create policy "Allow all" on orders
-  for all using (true) with check (true);
-ثم اضغط Run.
-
-Screenshot 2026-04-13 at 11.07.33 AM.png
-11:07 AM
-Success ✅ الجدول جاهز.
-
-الآن روح Settings → API وأعطيني:
-
-Project URL — يبدأ بـ https://xxxx.supabase.co
-anon public key — السطر الطويل تحت anon public
-وأنا أدمجهم في الكود مباشرة.
-
-Screenshot 2026-04-13 at 11.08.53 AM.png
-11:09 AM
-Supabase غيّر نظام المفاتيح. أحتاج منك:
-
-1. الـ Project URL — روح Settings → General وانسخ لي Reference ID أو الـ URL اللي يبدأ بـ https://
-
-2. الـ Publishable key — اضغط أيقونة النسخ 📋 بجانب sb_publishable_SVjZWY5Sep... وأرسله لي
-
-هذين الاثنين يكفون وأبدأ الدمج.
-
-مولاقيها
-
-11:09 AM
-روح Settings → General — أول صفحة في Settings، فيها سطر اسمه Reference ID أو Project URL يبدأ بـ https://xxxx.supabase.co
-
-أو أسهل — انظر لرابط المتصفح وهو على أي صفحة في Supabase، يكون فيه شي مثل:
-
-https://supabase.com/dashboard/project/abcdefghijklmnop
-الجزء abcdefghijklmnop هو الـ Reference ID، وعليه الـ URL يكون:
-
-https://abcdefghijklmnop.supabase.co
-أرسله لي مع الـ Publishable key وأكمل.
-
-انت بتتلكم على اي موقع ؟
-
-11:11 AM
-على supabase.com — اللي أنت فيه الحين.
-
-من الصفحة اللي شايفها، اضغط Settings → General من القائمة اليسار — أول خيار تحت CONFIGURATION.
-
-في بروجكت ستنق
-
-11:12 AM
-اضغط على General من القائمة اليسار — اللي تحت CONFIGURATION مباشرة. هي أول واحدة في القائمة.
-
-Screenshot 2026-04-13 at 11.12.47 AM.png
-وين ؟؟؟
-
-11:13 AM
-شايفه — الـ URL موجود في الصفحة:
-
-https://kxcgdsgsxqhszptprklj.supabase.co
-الآن أحتاج الـ Publishable key فقط — اضغط API Keys من نفس الصفحة (موجود في Get connected).
-
-Screenshot 2026-04-13 at 11.13.47 AM.png
-11:13 AM
-اضغط أيقونة النسخ 📋 بجانب sb_publishable_SVjZWY5Sep... وأرسل لي الكي كاملاً في رسالة.
-
-sb_publishable_SVjZWY5SepxvrMnAxhH2QQ_NRSMUiYw
-
-11:14 AM
-عندي كل شي. أبني الكود الآن مع Supabase real-time.
-
-
-Viewed a file, ran a command, created a file
-Viewed a file, ran a command, created a file
-جاهز ⬆️ ارفعه على GitHub بديلاً عن index.html الحالي.
-
-اللي تغير:
-
-الطلبات تُحفظ في Supabase — تظهر على كل الأجهزة في نفس الوقت
-التيم بوي يستقبل الطلبات real-time فور إرسالها من أي جهاز
-مؤشر اتصال 🟢 Live / 🔴 Offline في صفحة التيم بوي
-لو انقطع الاتصال يرجع تلقائياً كل 3 ثواني
-زر "Done" يحدّث Supabase مباشرة
-
-Office service
-Code · HTML 
-سويلي زر تحميل التطبيق على الاشاشه الرئىسيه حيث اذا ضغطت عليه ينزل في الهوم بيج سواء اندرويد او ايفون
-
-11:20 AM
-فكرة ممتازة. أضيف زر "Add to Home Screen" مع منطق مختلف لكل نظام.
-
-
-Viewed 2 files, edited 2 files, ran 2 commands
-Viewed 2 files, edited 2 files, ran 2 commands
-Now add the JS logic before the closing script tag:
-
-
-Ran a command, read a file
-Ran a command, read a file
-جاهز ⬆️
-
-كيف يشتغل:
-
-iPhone/iPad (Safari) — يظهر الزر تلقائياً، لما تضغطه تطلع نافذة بـ 3 خطوات بالعربي/الإنجليزي/الهندي تشرح كيف تضيفه من Safari
-
-Android (Chrome) — يظهر الزر مباشرة وعند الضغط يطلع نافذة التثبيت من المتصفح تلقائياً
-
-لو التطبيق مثبت أصلاً — الزر يختفي
-
-ملاحظة: الزر يظهر فقط على الموبايل، مش على الكمبيوتر.
-
-
-Office service
-Code · HTML 
-مايطلع عندي وين الزر ؟ خليه بشكل واضح تحت الموظف والتيم بوي
-
-11:22 AM
-
-Force install button always visible
-Force install button always visible
-الآن أخلي الزر دائماً مرئي بشكل واضح بغض النظر عن المتصفح:
-
-
-Ran a command, read a file
-Ran a command, read a file
-جاهز ⬆️
-
-الزر الآن يظهر دائماً تحت الكروتين مباشرة. ارفعه على GitHub وشوفه.
-
-iPhone: يضغط الزر ← تطلع نافذة بالخطوات Android: يضغط الزر ← نافذة التثبيت المباشر من Chrome
-
-
-Office service
-Code · HTML 
-اعطيني رابط الموقع الي اشاركه
-
-11:23 AM
-الرابط:
-
-https://mwagihg2-dev.github.io/moe-gym/
-هذا هو — شاركه مع التيم بوي والموظفين مباشرة.
-
-غلطان هذا خاص بالنادي هذا رابط اخر
-
-11:24 AM
-صح، ما عندي رابط الـ repo الثاني. أرسل لي اسم الـ repository اللي رفعت عليه ملف office-service وأعطيك الرابط.
-
-Office Service ☕.png
-شوف كيف يطلع
-
-11:25 AM
-شايف — الرابط ظاهر في أسفل الصورة:
-
-https://mwagihg2-dev.github.io
-لكن ما أشوف اسم الـ repository. شوف في شريط العنوان الرابط الكامل — يكون مثل:
-
-https://mwagihg2-dev.github.io/اسم-الريبو/
-أرسل لي الرابط الكامل.
-
-https://mwagihg2-dev.github.io/Office-service/
-
-11:25 AM
-هذا هو الرابط:
-
-https://mwagihg2-dev.github.io/Office-service/
-شاركه مع الموظفين والتيم بوي مباشرة.
-
-Screenshot 2026-04-13 at 11.26.03 AM.png
-فوضى
-
-11:26 AM
-الصفحة تحتاج refresh بعد ما رفعت الملف الجديد على GitHub.
-
-جرب:
-
-افتح الرابط https://mwagihg2-dev.github.io/Office-service/
-اعمل hard refresh — اضغط وامسك زر refresh ثم اختر "Reload Without Cache"
-أو على الجوال افتح الرابط في تاب جديد بدل ما تفتح نفس التاب.
-
-مايضبط شوف حل
-
-11:26 AM
-المشكلة أن GitHub Pages يحتفظ بالكاش. الحل:
-
-على GitHub:
-
-روح الـ repo → Settings → Pages
-غيّر Branch من main إلى none → اضغط Save
-انتظر 30 ثانية
-رجّعه من none إلى main → Save
-هذا يجبر GitHub يعيد نشر الملف من صفر.
-
-بعدها افتح الرابط بـ private/incognito mode عشان تتجاوز الكاش.
-
-انت عندك مشكله لما تكتبلي عربي انجليزي يتشقلب الخط .. انزل سطر عشان تفصلهم مو جنب بعض
-
-11:28 AM
-صح، آخذ بالملاحظة.
-
-بخصوص المشكلة — جرب افتح الرابط من Incognito / Private Mode الحين وأخبرني إذا ظهر صح.
-
-Screenshot 2026-04-13 at 11.28.34 AM.png
-وين ؟؟؟؟؟؟
-
-11:28 AM
-شايف — اضغط على github-pages تحت Deployments مباشرة، يفتح لك الرابط.
-
-أو افتح هذا مباشرة:
-
-https://mwagihg2-dev.github.io/Office-service/
-الرابط معدوم بس نصوص واكواد
-
-11:29 AM
-المشكلة أن الملف اللي رفعته على GitHub مش نفس الملف الأخير.
-
-الحل السريع:
-
-اضغط على index.html في الـ repo
-اضغط أيقونة القلم ✏️ (Edit)
-اضغط Cmd+A لتحديد كل شي
-احذف
-نزّل الملف من هنا ⬆️ وافتحه بأي text editor
-Cmd+A ثم Cmd+C للنسخ
-ارجع GitHub والصق Cmd+V
-اضغط Commit changes
-الملف مو واضح ارسله ك نص عشان انسخه
-
-11:30 AM
-الملف كبير جداً ما يمشي كنص في المحادثة — سيتقطع.
-
-الأسهل:
-
-اضغط على الملف ⬆️ في المحادثة
-اختر Download
-افتحه بـ TextEdit على Mac أو Notepad على Windows
-Cmd+A ثم Cmd+C
-روح GitHub والصق
-وين التحميل؟
-
-11:30 AM
-اضغط على اسم الملف office-service اللي فوق — يفتح في المتصفح، ثم:
-
-Mac/iPhone: اضغط وامسك على الرابط ← Save to Files
-
-أو من المتصفح اضغط Share ← Save to Files
-
-Screenshot 2026-04-13 at 11.31.04 AM.png
-مو فاهم ولا شي انا الان عندي مشكله شوف كيف تطلع الصفحه وحلها
-
-11:31 AM
-الصفحة تعرض الكود كنص بدل ما تشغله — هذا يعني إن GitHub ما عارف إن الملف HTML.
-
-السبب: الملف اسمه غلط أو GitHub Pages مو مضبوط.
-
-الحل:
-
-روح الـ repo → اضغط على index.html → تأكد إن اسمه بالضبط index.html وليس index.html.txt أو أي شي ثاني.
-
-أرسل لي screenshot للملف وأسمه.
-
-Screenshot 2026-04-13 at 11.32.11 AM.png
-11:32 AM
-واضح المشكلة — الملف فيه نص المحادثة بدل كود HTML.
-
-الحل الآن:
-
-احذف كل شي في هذا الـ editor (اضغط Cmd+A ثم Delete)
-نزّل الملف الصحيح من الرابط أدناه
-افتحه بـ TextEdit أو Notepad
-Cmd+A ثم Cmd+C
-ارجع GitHub والصق
-اضغط Commit changes
-
-Presented file
-Presented file
-نزّل هذا الملف ⬆️ — افتحه بـ TextEdit ثم انسخ كل محتواه وضعه في GitHub بدل الكود الحالي.
-
-
-Office service
-Code · HTML 
-
-
-
-
-Claude is AI and can make mistakes. Please double-check responses.
-Office service · HTML
-Copy
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -855,10 +117,10 @@ input[type=range]{flex:1;accent-color:var(--purple)}
 </style>
 </head>
 <body>
- 
+
 <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">🌙 Dark</button>
 <div class="toast" id="toast"></div>
- 
+
 <div class="modal-overlay" id="pinModal">
   <div class="pin-box">
     <div class="ico">🔐</div>
@@ -869,7 +131,7 @@ input[type=range]{flex:1;accent-color:var(--purple)}
     <button class="btn-secondary" style="width:100%" id="pm_cancel" onclick="closePin()">Cancel</button>
   </div>
 </div>
- 
+
 <!-- ENTRY -->
 <div id="entryScreen" class="screen active app">
   <div id="coffeeWrap" onclick="tapCoffee()">
@@ -901,7 +163,7 @@ input[type=range]{flex:1;accent-color:var(--purple)}
       <div class="sub" id="r_tb_sub">Incoming orders</div>
     </div>
   </div>
- 
+
   <div id="installWrap" style="display:block;margin-top:4px">
     <button id="installBtn" onclick="handleInstall()" style="width:100%;padding:12px;border-radius:12px;border:1.5px dashed var(--purple);background:var(--purple-light);color:var(--purple-dark);font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
       <span style="font-size:18px">📲</span>
@@ -909,7 +171,7 @@ input[type=range]{flex:1;accent-color:var(--purple)}
     </button>
   </div>
 </div>
- 
+
 <div class="modal-overlay" id="iosModal">
   <div class="pin-box" style="width:320px">
     <div style="font-size:32px;margin-bottom:10px">📲</div>
@@ -931,7 +193,7 @@ input[type=range]{flex:1;accent-color:var(--purple)}
     <button class="btn-main" style="margin-top:20px" onclick="document.getElementById('iosModal').classList.remove('show')" id="ios_close">Got it ✓</button>
   </div>
 </div>
- 
+
 <!-- EMPLOYEE -->
 <div id="employeeScreen" class="screen app">
   <div class="top-bar">
@@ -984,7 +246,7 @@ input[type=range]{flex:1;accent-color:var(--purple)}
   <button class="btn-main" id="emp_send" onclick="submitOrder()">Send Order</button>
   <div style="height:24px"></div>
 </div>
- 
+
 <!-- TEAM BOY -->
 <div id="teamboyScreen" class="screen app">
   <div class="top-bar">
@@ -1021,7 +283,7 @@ input[type=range]{flex:1;accent-color:var(--purple)}
   </div>
   <div style="height:24px"></div>
 </div>
- 
+
 <!-- ADMIN -->
 <div id="adminScreen" class="screen app">
   <div class="top-bar">
@@ -1059,12 +321,12 @@ input[type=range]{flex:1;accent-color:var(--purple)}
   </div>
   <div style="height:24px"></div>
 </div>
- 
+
 <script>
 /* ── SUPABASE CONFIG ── */
 const SB_URL='https://kxcgdsgsxqhszptprklj.supabase.co';
 const SB_KEY='sb_publishable_SVjZWY5SepxvrMnAxhH2QQ_NRSMUiYw';
- 
+
 /* ── TRANSLATIONS ── */
 const T={
   en:{
@@ -1131,7 +393,7 @@ const T={
     connOnline:'लाइव',connOffline:'ऑफलाइन'
   }
 };
- 
+
 /* ── STATE ── */
 let lang='en';
 let isDark=localStorage.getItem('tbDark')==='1';
@@ -1143,9 +405,9 @@ let currentFilter='all';
 let alertLoop=null;
 let realtimeCh=null;
 let tapCount=0;let tapTimer=null;
- 
+
 function saveUnavail(){localStorage.setItem('tbUnavail5',JSON.stringify(unavailableItems));}
- 
+
 /* ── SUPABASE API HELPERS ── */
 async function sbFetch(path,opts={}){
   const res=await fetch(SB_URL+'/rest/v1/'+path,{
@@ -1162,7 +424,7 @@ async function sbFetch(path,opts={}){
   const txt=await res.text();
   return txt?JSON.parse(txt):null;
 }
- 
+
 async function loadOrders(){
   try{
     const data=await sbFetch('orders?select=*&order=created_at.desc&limit=100');
@@ -1176,7 +438,7 @@ async function loadOrders(){
     renderTBOrders();renderAdminOrders();updateStats();updateTBPending();
   }catch(e){showToast('⚠ Load error');}
 }
- 
+
 async function insertOrder(order){
   return sbFetch('orders',{
     method:'POST',
@@ -1188,7 +450,7 @@ async function insertOrder(order){
     })
   });
 }
- 
+
 async function updateOrderStatus(id,status){
   return sbFetch('orders?id=eq.'+id,{
     method:'PATCH',
@@ -1196,11 +458,11 @@ async function updateOrderStatus(id,status){
     body:JSON.stringify({status})
   });
 }
- 
+
 async function deleteCompleted(){
   return sbFetch('orders?status=eq.done',{method:'DELETE',prefer:'return=minimal'});
 }
- 
+
 /* ── SUPABASE REALTIME ── */
 function startRealtime(){
   setConnStatus(false);
@@ -1243,14 +505,14 @@ function startRealtime(){
   ws.onerror=()=>{setConnStatus(false);};
   realtimeCh=ws;
 }
- 
+
 function setConnStatus(online){
   const dot=document.getElementById('tbConnDot');
   const lbl=document.getElementById('tbConnLabel');
   if(dot)dot.classList.toggle('online',online);
   if(lbl)lbl.textContent=online?T[lang].connOnline:T[lang].connOffline;
 }
- 
+
 /* ── THEME ── */
 function applyTheme(){
   document.body.classList.toggle('dark',isDark);
@@ -1258,7 +520,7 @@ function applyTheme(){
   if(btn)btn.textContent=isDark?(T[lang].themeLight||'☀️ Light'):(T[lang].themeDark||'🌙 Dark');
 }
 function toggleTheme(){isDark=!isDark;localStorage.setItem('tbDark',isDark?'1':'0');applyTheme();}
- 
+
 /* ── LANGUAGE ── */
 function setLang(l){
   lang=l;
@@ -1278,7 +540,7 @@ function setLang(l){
   renderDrinkChips();renderTaskChipsEmp();renderUnavailChips();
   renderTBOrders();renderAdminOrders();renderAdminMenu();updateStats();updateTBPending();
 }
- 
+
 /* ── NAVIGATION ── */
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -1304,7 +566,7 @@ function goRole(role){
     startRealtime();
   }
 }
- 
+
 /* ── ADMIN PIN ── */
 function tapCoffee(){
   tapCount++;updateTapDots();clearTimeout(tapTimer);
@@ -1327,7 +589,7 @@ function checkAdminPin(v){
   }
 }
 function closePin(){document.getElementById('pinModal').classList.remove('show');tapCount=0;updateTapDots();}
- 
+
 /* ── AUDIO ── */
 let _actx=null;
 function getCtx(){
@@ -1344,7 +606,7 @@ function unlockAudio(){
 }
 document.addEventListener('touchstart',unlockAudio,true);
 document.addEventListener('mousedown',unlockAudio,true);
- 
+
 function playSend(){
   const ctx=getCtx();if(!ctx)return;
   [[0,523,0.3],[130,659,0.28],[260,784,0.25],[390,1047,0.2]].forEach(([d,f,v])=>{
@@ -1374,7 +636,7 @@ function playError(){
 }
 function startAlertLoop(){playBeep();alertLoop=setInterval(playBeep,2600);}
 function stopAlert(){if(alertLoop){clearInterval(alertLoop);alertLoop=null;}}
- 
+
 function triggerAlert(order){
   const t=T[lang];
   document.getElementById('alertBanner').classList.add('show');
@@ -1384,13 +646,13 @@ function triggerAlert(order){
   startAlertLoop();
 }
 function acknowledgeAlert(){stopAlert();document.getElementById('alertBanner').classList.remove('show');}
- 
+
 function updateTBPending(){
   const p=orders.filter(o=>o.status==='new').length;
   const el=document.getElementById('tb_pendingBadge');
   if(p>0){el.textContent=p+' '+T[lang].pending;el.style.display='inline';}else el.style.display='none';
 }
- 
+
 /* ── CHIPS ── */
 function renderDrinkChips(){
   const c=document.getElementById('drinkChips');if(!c)return;c.innerHTML='';
@@ -1434,7 +696,7 @@ function toggleTaskEmp(i){
   renderTaskChipsEmp();
 }
 function toggleSw(el){el.classList.toggle('on');}
- 
+
 /* ── SUBMIT ── */
 async function submitOrder(){
   const office=document.getElementById('officeNum').value.trim();
@@ -1464,7 +726,7 @@ async function submitOrder(){
   }catch(e){showToast('⚠ Error sending order');}
   btn.disabled=false;
 }
- 
+
 /* ── RENDER ── */
 function drinkLine(o,t){
   if(!o.drink)return'';
@@ -1544,16 +806,16 @@ function showToast(msg){
   const t=document.getElementById('toast');
   t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600);
 }
- 
+
 applyTheme();updateStats();
- 
+
 /* ── INSTALL / ADD TO HOME SCREEN ── */
 let deferredPrompt=null;
- 
+
 const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
 const isAndroid=/android/i.test(navigator.userAgent);
 const isStandalone=window.matchMedia('(display-mode:standalone)').matches||window.navigator.standalone;
- 
+
 function showInstallBtn(){
   const wrap=document.getElementById('installWrap');
   const lbl=document.getElementById('installBtnLabel');
@@ -1566,7 +828,7 @@ function showInstallBtn(){
     lbl.textContent=lang==='ar'?'تثبيت التطبيق':lang==='hi'?'ऐप इंस्टॉल करें':'Install App';
   }
 }
- 
+
 function handleInstall(){
   if(isIOS){
     document.getElementById('iosModal').classList.add('show');
@@ -1591,22 +853,21 @@ function handleInstall(){
     });
   }
 }
- 
+
 window.addEventListener('beforeinstallprompt',e=>{
   e.preventDefault();
   deferredPrompt=e;
   showInstallBtn();
 });
- 
+
 window.addEventListener('appinstalled',()=>{
   document.getElementById('installWrap').style.display='none';
   deferredPrompt=null;
 });
- 
+
 /* Always show install button — never hide based on detection */
 document.getElementById('installWrap').style.display='block';
- 
+
 </script>
 </body>
 </html>
- 
