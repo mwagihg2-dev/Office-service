@@ -123,6 +123,8 @@ input[type=range]{flex:1;accent-color:var(--purple)}
 .tb-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;flex-shrink:0}
 .install-btn{width:100%;padding:12px;border-radius:12px;border:1.5px dashed var(--purple);background:var(--purple-light);color:var(--purple-dark);font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:4px}
 select{-webkit-appearance:auto}
+.refresh-btn{background:var(--card);border:1.5px solid var(--border);border-radius:20px;padding:6px 13px;font-size:16px;cursor:pointer;color:var(--text2);line-height:1;transition:transform 0.3s}
+.refresh-btn:active{transform:rotate(180deg)}
 </style>
 </head>
 <body>
@@ -204,7 +206,10 @@ select{-webkit-appearance:auto}
 
 <!-- ══ TEAMBOY SELECT ══ -->
 <div id="tbSelectScreen" class="screen app">
-  <div class="back-btn-wrap"><button class="back-btn" onclick="goEntry()">← Back</button></div>
+  <div class="back-btn-wrap" style="display:flex;justify-content:center;gap:8px">
+    <button class="refresh-btn" onclick="location.reload()">↻</button>
+    <button class="back-btn" onclick="goEntry()">← Back</button>
+  </div>
   <div style="text-align:center;margin-bottom:20px">
     <p style="font-size:18px;font-weight:700;color:var(--text)" id="tbs_title">Select Profile</p>
   </div>
@@ -232,7 +237,10 @@ select{-webkit-appearance:auto}
       <button class="lang-btn" onclick="setLang('ar')">AR</button>
       <button class="lang-btn" onclick="setLang('hi')">हि</button>
     </div>
-    <button class="back-btn" onclick="goEntry()">← Back</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="refresh-btn" onclick="refreshPage()">↻</button>
+      <button class="back-btn" onclick="goEntry()">← Back</button>
+    </div>
   </div>
   <div class="card" style="text-align:center;padding:18px">
     <div style="font-size:30px">☕</div>
@@ -318,7 +326,10 @@ select{-webkit-appearance:auto}
       <button class="lang-btn" onclick="setLang('ar')">AR</button>
       <button class="lang-btn" onclick="setLang('hi')">हि</button>
     </div>
-    <button class="back-btn" onclick="goEntry()">← Back</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="refresh-btn" onclick="refreshTB()">↻</button>
+      <button class="back-btn" onclick="goEntry()">← Back</button>
+    </div>
   </div>
   <div class="card" style="padding:13px 18px">
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -360,7 +371,10 @@ select{-webkit-appearance:auto}
       <button class="lang-btn" onclick="setLang('ar')">AR</button>
       <button class="lang-btn" onclick="setLang('hi')">हि</button>
     </div>
-    <button class="back-btn" onclick="goEntry()">← Back</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="refresh-btn" onclick="refreshAdmin()">↻</button>
+      <button class="back-btn" onclick="goEntry()">← Back</button>
+    </div>
   </div>
   <div class="card" style="padding:13px 18px">
     <p style="font-size:17px;font-weight:700;color:var(--text)" id="adm_title">Admin Dashboard</p>
@@ -611,6 +625,9 @@ function startRealtime(){
           renderTBOrders();renderAdminOrders();updateStats();updateTBPending();
           if(document.getElementById('teamboyScreen').classList.contains('active')&&o.status==='new'){
             triggerAlert(o);
+          } else if(o.status==='new'){
+            // Even if not on TB screen, store for when they open it
+            updateTBPending();
           }
         }
       } else if(msg.payload?.data){loadOrders();}
@@ -791,13 +808,18 @@ function playSend(){
   });
 }
 function playBeep(){
+  // Vibrate on mobile
+  if(navigator.vibrate)navigator.vibrate([200,100,200,100,200]);
   const ctx=getCtx();if(!ctx)return;
-  [[0,880,0.4],[210,1046,0.38],[420,880,0.35]].forEach(([d,f,v])=>{
+  // Louder urgent alert: three rising tones
+  const now=ctx.currentTime;
+  [[0,660,0.5],[0.25,880,0.5],[0.5,1100,0.5],[0.75,880,0.4],[1.0,660,0.4],[1.25,880,0.5],[1.5,1100,0.5]].forEach(([d,f,v])=>{
     const o=ctx.createOscillator();const g=ctx.createGain();
-    o.type='sine';o.frequency.value=f;o.connect(g);g.connect(ctx.destination);
-    const t=ctx.currentTime+d/1000;
-    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+0.05);g.gain.exponentialRampToValueAtTime(0.001,t+0.32);
-    o.start(t);o.stop(t+0.35);
+    o.type='triangle';o.frequency.value=f;
+    o.connect(g);g.connect(ctx.destination);
+    const t=now+d;
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+0.04);g.gain.exponentialRampToValueAtTime(0.001,t+0.22);
+    o.start(t);o.stop(t+0.25);
   });
 }
 function playError(){
@@ -807,7 +829,7 @@ function playError(){
   g.gain.setValueAtTime(0.2,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.28);
   o.start(ctx.currentTime);o.stop(ctx.currentTime+0.3);
 }
-function startAlertLoop(){playBeep();alertLoop=setInterval(playBeep,2600);}
+function startAlertLoop(){playBeep();alertLoop=setInterval(playBeep,3500);}
 function stopAlert(){if(alertLoop){clearInterval(alertLoop);alertLoop=null;}}
 function triggerAlert(order){
   const t=T[lang];
@@ -1070,6 +1092,20 @@ function handleInstall(){
   }
 }
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;});
+
+/* ══ REFRESH FUNCTIONS ══ */
+function refreshPage(){
+  renderDrinkChips();renderTaskChipsEmp();
+  showToast('✓ Refreshed');
+}
+function refreshTB(){
+  loadOrders().then(()=>{renderUnavailChips();updateTBPending();});
+  showToast('✓ Refreshed');
+}
+function refreshAdmin(){
+  loadOrders().then(()=>{renderAdminMenu();});
+  showToast('✓ Refreshed');
+}
 
 /* ══ INIT ══ */
 applyTheme();updateStats();
