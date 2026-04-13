@@ -517,7 +517,12 @@ let selectedDrink=null;
 let selectedTBForOrder='';
 let selectedTasksEmp=[];
 let orders=[];
-let unavailableItems=JSON.parse(localStorage.getItem('tbUnavail6')||'[]');
+// Per-TB unavailability: {Haseeb:[...], Saqib:[...], Rakib:[...]}
+let tbUnavail=JSON.parse(localStorage.getItem('tbUnavailPerTB')||'{}');
+function getUnavail(tbName){return tbUnavail[tbName]||[];}
+function setUnavail(tbName,arr){tbUnavail[tbName]=arr;localStorage.setItem('tbUnavailPerTB',JSON.stringify(tbUnavail));}
+// For employee view — based on selected TB
+function getUnavailForSelected(){return selectedTBForOrder?getUnavail(selectedTBForOrder):[];}
 let currentFilter='all';
 let alertLoop=null;
 let realtimeCh=null;
@@ -528,14 +533,20 @@ let deferredPrompt=null;
 const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
 const isStandalone=window.matchMedia('(display-mode:standalone)').matches||window.navigator.standalone;
 
-function saveUnavail(){localStorage.setItem('tbUnavail6',JSON.stringify(unavailableItems));}
+// saveUnavail replaced by setUnavail(tbName, arr)
 
 /* ══ SUPABASE ══ */
 async function sbFetch(path,opts={}){
-  const res=await fetch(SB_URL+'/rest/v1/'+path,{
-    headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':opts.prefer||'return=representation',...(opts.headers||{})},
-    ...opts
-  });
+  const headers={
+    'apikey':SB_KEY,
+    'Authorization':'Bearer '+SB_KEY,
+    'Content-Type':'application/json',
+    'Prefer':opts.prefer||'return=representation'
+  };
+  if(opts.headers)Object.assign(headers,opts.headers);
+  const fetchOpts={...opts,headers};
+  delete fetchOpts.prefer;
+  const res=await fetch(SB_URL+'/rest/v1/'+path,fetchOpts);
   if(!res.ok){const e=await res.text();throw new Error(e);}
   const txt=await res.text();return txt?JSON.parse(txt):null;
 }
@@ -828,25 +839,29 @@ function toggleSched(el){
 /* ══ TB SELECTOR (employee form) ══ */
 function selectTB(name){
   selectedTBForOrder=name;
+  const colors={Haseeb:'#534AB7',Saqib:'#0F6E56',Rakib:'#BA7517'};
   ['Haseeb','Saqib','Rakib'].forEach(n=>{
     const el=document.getElementById('tbc_'+n.toLowerCase());
     if(!el)return;
-    const colors={Haseeb:'#534AB7',Saqib:'#0F6E56',Rakib:'#BA7517'};
     if(n===name){
       el.style.borderColor=colors[n];
-      el.style.background=isDark?'rgba(255,255,255,0.05)':'rgba(0,0,0,0.03)';
+      el.style.boxShadow='0 0 0 3px '+colors[n]+'33';
     } else {
       el.style.borderColor='var(--border)';
-      el.style.background='var(--card)';
+      el.style.boxShadow='none';
     }
   });
+  // Refresh chips to show this TB's availability
+  selectedDrink=null;
+  renderDrinkChips();renderTaskChipsEmp();
 }
 
 /* ══ CHIPS ══ */
 function renderDrinkChips(){
   const c=document.getElementById('drinkChips');if(!c)return;c.innerHTML='';
+  const unavail=getUnavailForSelected();
   T[lang].drinks.forEach((d,i)=>{
-    const isU=unavailableItems.includes('drink_'+i);
+    const isU=unavail.includes('drink_'+i);
     const el=document.createElement('div');
     el.className='chip'+(selectedDrink===i?' selected':'')+(isU?' unavailable':'');
     el.textContent=d;el.onclick=()=>{if(!isU)selectDrink(i);};c.appendChild(el);
@@ -854,8 +869,9 @@ function renderDrinkChips(){
 }
 function renderTaskChipsEmp(){
   const c=document.getElementById('taskChipsEmp');if(!c)return;c.innerHTML='';
+  const unavail=getUnavailForSelected();
   T[lang].tasks.forEach((d,i)=>{
-    const isU=unavailableItems.includes('task_'+i);
+    const isU=unavail.includes('task_'+i);
     const el=document.createElement('div');
     el.className='chip'+(selectedTasksEmp.includes(i)?' selected':'')+(isU?' unavailable':'');
     el.textContent=d;el.onclick=()=>{if(!isU)toggleTaskEmp(i);};c.appendChild(el);
@@ -863,17 +879,20 @@ function renderTaskChipsEmp(){
 }
 function renderUnavailChips(){
   const c=document.getElementById('unavailChips');if(!c)return;c.innerHTML='';
+  const myUnavail=getUnavail(currentTBName);
   [...T[lang].drinks.map((d,i)=>({key:'drink_'+i,label:d})),...T[lang].tasks.map((d,i)=>({key:'task_'+i,label:d}))].forEach(item=>{
-    const isU=unavailableItems.includes(item.key);
+    const isU=myUnavail.includes(item.key);
     const el=document.createElement('div');
     el.className='chip'+(isU?' unavail-marked selected':'');
     el.textContent=item.label;el.onclick=()=>toggleUnavail(item.key);c.appendChild(el);
   });
 }
 function toggleUnavail(key){
-  const idx=unavailableItems.indexOf(key);
-  if(idx===-1)unavailableItems.push(key);else unavailableItems.splice(idx,1);
-  saveUnavail();renderUnavailChips();renderDrinkChips();renderTaskChipsEmp();
+  const arr=[...getUnavail(currentTBName)];
+  const idx=arr.indexOf(key);
+  if(idx===-1)arr.push(key);else arr.splice(idx,1);
+  setUnavail(currentTBName,arr);
+  renderUnavailChips();
 }
 function selectDrink(i){
   selectedDrink=i;renderDrinkChips();
@@ -998,14 +1017,26 @@ async function markDoneAdmin(id){
 function renderAdminMenu(){
   const el=document.getElementById('adminMenuList');if(!el)return;const t=T[lang];
   const all=[...T[lang].drinks.map((d,i)=>({key:'drink_'+i,label:d,cat:'Drink'})),...T[lang].tasks.map((d,i)=>({key:'task_'+i,label:d,cat:'Task'}))];
-  el.innerHTML=all.map(item=>{
-    const isU=unavailableItems.includes(item.key);
-    return`<div class="menu-row"><div><div class="menu-name">${item.label}</div><div class="menu-cat">${item.cat}</div></div><div class="avail-pill ${isU?'unavail':'avail'}" onclick="adminToggleItem('${item.key}')">${isU?t.unavailable:t.available}</div></div>`;
-  }).join('');
+  const tbNames=['Haseeb','Saqib','Rakib'];
+  const tbColors={Haseeb:'#534AB7',Saqib:'#0F6E56',Rakib:'#BA7517'};
+  el.innerHTML=tbNames.map(tbN=>{
+    const unavail=getUnavail(tbN);
+    return`<div style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="width:22px;height:22px;border-radius:50%;background:${tbColors[tbN]};color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">${tbN[0]}</div>
+        <span style="font-size:13px;font-weight:600;color:var(--text)">${tbN}</span>
+      </div>
+      ${all.map(item=>{
+        const isU=unavail.includes(item.key);
+        return`<div class="menu-row" style="padding:8px 0"><div><div class="menu-name" style="font-size:13px">${item.label}</div></div><div class="avail-pill ${isU?'unavail':'avail'}" onclick="adminToggleItem('${item.key}','${tbN}')">${isU?t.unavailable:t.available}</div></div>`;
+      }).join('')}
+    </div>`;
+  }).join('<div style="height:1px;background:var(--border);margin:8px 0"></div>');
 }
-function adminToggleItem(key){
-  const idx=unavailableItems.indexOf(key);if(idx===-1)unavailableItems.push(key);else unavailableItems.splice(idx,1);
-  saveUnavail();renderAdminMenu();renderUnavailChips();renderDrinkChips();renderTaskChipsEmp();
+function adminToggleItem(key,tbName){
+  const arr=[...getUnavail(tbName)];
+  const idx=arr.indexOf(key);if(idx===-1)arr.push(key);else arr.splice(idx,1);
+  setUnavail(tbName,arr);renderAdminMenu();
 }
 function updateStats(){
   document.getElementById('statTotal').textContent=orders.length;
