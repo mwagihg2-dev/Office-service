@@ -82,7 +82,7 @@ input[type=range]{flex:1;accent-color:var(--purple)}
 .pin-box .ico{font-size:34px;margin-bottom:10px}
 .pin-box h3{font-size:17px;font-weight:700;color:var(--text);margin-bottom:6px}
 .pin-box p{font-size:13px;color:var(--text2);margin-bottom:16px}
-.pin-input{text-align:center;font-size:26px;letter-spacing:8px;padding:11px;border-radius:12px;border:1px solid var(--border);background:var(--bg);color:var(--text);width:100%;margin-bottom:8px;outline:none}
+.pin-input{text-align:center;font-size:26px;letter-spacing:8px;padding:11px;border-radius:12px;border:1px solid var(--border);background:var(--bg);color:var(--text);width:100%;margin-bottom:8px;outline:none;-webkit-text-security:disc;text-security:disc}
 .pin-input:focus{border-color:var(--purple)}
 .pin-err{font-size:12px;color:var(--red);min-height:18px;margin-bottom:8px}
 .stat-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
@@ -136,7 +136,7 @@ select{-webkit-appearance:auto}
     <div class="ico" id="pm_ico">🔐</div>
     <h3 id="pm_title">Access</h3>
     <p id="pm_sub">Enter PIN</p>
-    <input class="pin-input" type="password" id="pinInput" maxlength="6" placeholder="••••" oninput="checkPin(this.value)" autocomplete="off">
+    <input class="pin-input" type="tel" id="pinInput" maxlength="6" placeholder="••••" oninput="checkPin(this.value)" autocomplete="off" inputmode="numeric" pattern="[0-9]*">
     <div class="pin-err" id="pm_err"></div>
     <button class="btn-secondary" style="width:100%" onclick="closePin()">Cancel</button>
   </div>
@@ -246,6 +246,25 @@ select{-webkit-appearance:auto}
     <label id="l_name">Your Name (optional)</label>
     <input type="text" id="personName">
   </div>
+  <!-- Ti Boy Selector -->
+  <div class="card">
+    <p class="section-title" id="emp_tbLabel">Directed To</p>
+    <div style="display:flex;gap:8px">
+      <div class="tb-chip" id="tbc_haseeb" onclick="selectTB('Haseeb')" style="flex:1;padding:10px;border-radius:12px;border:1.5px solid var(--border);background:var(--card);text-align:center;cursor:pointer;transition:all 0.15s">
+        <div style="width:28px;height:28px;border-radius:50%;background:#534AB7;color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;margin:0 auto 4px">H</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text)">Haseeb</div>
+      </div>
+      <div class="tb-chip" id="tbc_saqib" onclick="selectTB('Saqib')" style="flex:1;padding:10px;border-radius:12px;border:1.5px solid var(--border);background:var(--card);text-align:center;cursor:pointer;transition:all 0.15s">
+        <div style="width:28px;height:28px;border-radius:50%;background:#0F6E56;color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;margin:0 auto 4px">S</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text)">Saqib</div>
+      </div>
+      <div class="tb-chip" id="tbc_rakib" onclick="selectTB('Rakib')" style="flex:1;padding:10px;border-radius:12px;border:1.5px solid var(--border);background:var(--card);text-align:center;cursor:pointer;transition:all 0.15s">
+        <div style="width:28px;height:28px;border-radius:50%;background:#BA7517;color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;margin:0 auto 4px">R</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text)">Rakib</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Schedule -->
   <div class="card">
     <p class="section-title" id="emp_schedLabel">Schedule</p>
@@ -394,6 +413,7 @@ const SB_KEY='sb_publishable_SVjZWY5SepxvrMnAxhH2QQ_NRSMUiYw';
 /* PINs */
 const PINS={
   employee:'1234',
+  teamboy:'5678',      // shared Ti Boy entry PIN
   tb_haseeb:'2001',
   tb_saqib:'2002',
   tb_rakib:'2003',
@@ -413,6 +433,8 @@ const T={
     l_officeNum:'Office Number',l_name:'Your Name (optional)',
     emp_schedLabel:'SCHEDULE',l_schedToggle:'Schedule for later',l_schedTime:'Delivery time (max 1 hour from now)',
     emp_drinkLabel:'DRINK',l_diet:'Diet / Sugar-free',l_cup:'Personal Cup',l_sugar:'Sugar (spoons)',
+    emp_tbLabel:'Directed To',
+    emp_tbLabel:'Directed To',
     emp_taskLabel:'TASKS',l_note:'Additional Note',emp_send:'Send Order',
     tb_title:'Incoming Orders',
     ab_text:'🔔 New order!',ab_ack:'Received ✓',
@@ -439,6 +461,8 @@ const T={
     l_officeNum:'رقم المكتب',l_name:'اسمك (اختياري)',
     emp_schedLabel:'جدولة',l_schedToggle:'جدولة الطلب لوقت لاحق',l_schedTime:'وقت التسليم (بحد أقصى ساعة)',
     emp_drinkLabel:'المشروب',l_diet:'دايت / بدون سكر',l_cup:'كاستي الخاصة',l_sugar:'ملاعق السكر',
+    emp_tbLabel:'موجه إلى',
+    emp_tbLabel:'موجه إلى',
     emp_taskLabel:'المهام',l_note:'ملاحظة إضافية',emp_send:'إرسال الطلب',
     tb_title:'الطلبات الواردة',
     ab_text:'🔔 طلب جديد!',ab_ack:'تم الاستلام ✓',
@@ -465,6 +489,8 @@ const T={
     l_officeNum:'ऑफिस नंबर',l_name:'नाम (वैकल्पिक)',
     emp_schedLabel:'शेड्यूल',l_schedToggle:'बाद के लिए शेड्यूल करें',l_schedTime:'डिलीवरी समय (अधिकतम 1 घंटे)',
     emp_drinkLabel:'पेय',l_diet:'डाइट / शुगर-फ्री',l_cup:'अपना कप',l_sugar:'चीनी के चम्मच',
+    emp_tbLabel:'किसे भेजें',
+    emp_tbLabel:'किसे भेजें',
     emp_taskLabel:'काम',l_note:'अतिरिक्त नोट',emp_send:'ऑर्डर भेजें',
     tb_title:'आने वाले ऑर्डर',
     ab_text:'🔔 नया ऑर्डर!',ab_ack:'मिल गया ✓',
@@ -488,6 +514,7 @@ const T={
 let lang='en';
 let isDark=localStorage.getItem('tbDark')==='1';
 let selectedDrink=null;
+let selectedTBForOrder='';
 let selectedTasksEmp=[];
 let orders=[];
 let unavailableItems=JSON.parse(localStorage.getItem('tbUnavail6')||'[]');
@@ -538,7 +565,7 @@ async function insertOrder(o){
   return sbFetch('orders',{method:'POST',prefer:'return=representation',
     body:JSON.stringify({office:o.office,person:o.person,drink:o.drink,
       tasks:JSON.stringify(o.tasks),note:o.note,diet:o.diet,own_cup:o.ownCup,
-      sugar:o.sugar,status:o.schedTime?'scheduled':'new',sched_time:o.schedTime||null})
+      sugar:o.sugar,status:o.schedTime?'scheduled':'new',sched_time:o.schedTime||null,tb_name:o.tbName||null})
   });
 }
 
@@ -617,7 +644,7 @@ function setLang(l){
   const ids=['e_title','e_sub','r_emp','r_emp_sub','r_tb','r_tb_sub','tbs_title','tbs_sub','tbs_sub2','tbs_sub3',
     'emp_title','emp_sub','emp_officeLabel','l_officeNum','l_name',
     'emp_schedLabel','l_schedToggle','l_schedTime',
-    'emp_drinkLabel','l_diet','l_cup','l_sugar','emp_taskLabel','l_note','emp_send',
+    'emp_drinkLabel','l_diet','l_cup','l_sugar','emp_tbLabel','emp_taskLabel','l_note','emp_send',
     'tb_title','ab_text','ab_ack','tb_unavailLabel','tb_unavailHint',
     'adm_title','adm_sub','s_total','s_pending','s_done','adm_menuLabel','adm_dataLabel','adm_clearDone','adm_filterLabel',
     'f_all','f_new','f_done','f_sched','installBtnLabel'];
@@ -637,6 +664,10 @@ function goEntry(){
   stopAlert();
   if(realtimeCh){realtimeCh.close();realtimeCh=null;}
   tapCount=0;updateTapDots();currentTBName='';
+  // Reset to default purple theme
+  document.documentElement.style.setProperty('--purple','#534AB7');
+  document.documentElement.style.setProperty('--purple-light','#EEEDFE');
+  document.documentElement.style.setProperty('--purple-dark','#3C3489');
   showScreen('entryScreen');
 }
 
@@ -663,7 +694,8 @@ function checkPin(v){
   const target=pinTarget;
   let correct=false;
   if(target==='employee'&&v===PINS.employee)correct=true;
-  else if(target==='teamboy_select'&&(v===PINS.tb_haseeb||v===PINS.tb_saqib||v===PINS.tb_rakib)){
+  else if(target==='teamboy_select'&&v===PINS.teamboy){
+    // shared TB PIN accepted — show profile picker
     document.getElementById('pinModal').classList.remove('show');
     showScreen('tbSelectScreen');return;
   }
@@ -682,11 +714,19 @@ function checkPin(v){
       document.getElementById('drinkOptions').style.display='none';
       document.getElementById('schedOptions').style.display='none';
       document.getElementById('schedToggle').classList.remove('on');
+      selectedTBForOrder='';selectTB('');
       document.getElementById('sugarRange').value=2;document.getElementById('sugarVal').textContent='2';
       document.getElementById('dietToggle').classList.remove('on');document.getElementById('cupToggle').classList.remove('on');
     } else if(target.startsWith('tb_')){
       const av=document.getElementById('tbAvatar');
-      if(av){av.textContent=currentTBName[0];av.style.background=TB_COLORS[currentTBName]||'#534AB7';}
+      const tbColor=TB_COLORS[currentTBName]||'#534AB7';
+      if(av){av.textContent=currentTBName[0];av.style.background=tbColor;}
+      // Apply per-TB accent color
+      document.documentElement.style.setProperty('--purple',tbColor);
+      const lightMap={Haseeb:'#EEEDFE',Saqib:'#E1F5EE',Rakib:'#FAEEDA'};
+      const darkMap={Haseeb:'#3C3489',Saqib:'#0A4A38',Rakib:'#7A4A00'};
+      document.documentElement.style.setProperty('--purple-light',lightMap[currentTBName]||'#EEEDFE');
+      document.documentElement.style.setProperty('--purple-dark',darkMap[currentTBName]||'#3C3489');
       showScreen('teamboyScreen');
       loadOrders().then(()=>{renderUnavailChips();updateTBPending();});
       startRealtime();
@@ -783,6 +823,23 @@ function toggleSched(el){
   }
 }
 
+/* ══ TB SELECTOR (employee form) ══ */
+function selectTB(name){
+  selectedTBForOrder=name;
+  ['Haseeb','Saqib','Rakib'].forEach(n=>{
+    const el=document.getElementById('tbc_'+n.toLowerCase());
+    if(!el)return;
+    const colors={Haseeb:'#534AB7',Saqib:'#0F6E56',Rakib:'#BA7517'};
+    if(n===name){
+      el.style.borderColor=colors[n];
+      el.style.background=isDark?'rgba(255,255,255,0.05)':'rgba(0,0,0,0.03)';
+    } else {
+      el.style.borderColor='var(--border)';
+      el.style.background='var(--card)';
+    }
+  });
+}
+
 /* ══ CHIPS ══ */
 function renderDrinkChips(){
   const c=document.getElementById('drinkChips');if(!c)return;c.innerHTML='';
@@ -857,7 +914,7 @@ async function submitOrder(){
       diet:document.getElementById('dietToggle').classList.contains('on'),
       ownCup:document.getElementById('cupToggle').classList.contains('on'),
       sugar:parseInt(document.getElementById('sugarRange').value),
-      schedTime
+      schedTime,tbName:selectedTBForOrder||null
     });
     playSend();showToast(t.orderSent);
     selectedDrink=null;selectedTasksEmp=[];
@@ -908,14 +965,14 @@ function orderCard(o,t,showBadge){
 function renderTBOrders(){
   const el=document.getElementById('tbOrdersList');if(!el)return;
   const t=T[lang];
-  const list=orders.filter(o=>o.status==='new');
+  const list=orders.filter(o=>o.status==='new'&&(!currentTBName||!o.tbName||o.tbName===currentTBName));
   el.innerHTML=list.length?list.map(o=>orderCard(o,t,false)).join(''):`<div style="padding:22px;text-align:center;color:var(--text2);font-size:14px">${t.noOrders}</div>`;
   updateTBPending();
 }
 
 async function markDoneTB(id){
   try{await updateOrderStatus(id,'done');}catch(e){}
-  orders=orders.map(o=>o.id===id?{...o,status:'done'}:o);
+  orders=orders.map(o=>o.id===id?{...o,status:'done',tbName:currentTBName||o.tbName}:o);
   renderTBOrders();updateStats();
 }
 
