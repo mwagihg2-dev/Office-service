@@ -570,6 +570,1118 @@ async function loadOrders(){
     const data=await sbFetch('orders?select=*&order=created_at.desc&limit=200');
     orders=data.map(mapRow);
     renderTBOrders();renderAdminOrders();updateStats();updateTBPending();
+  }catch(e){showToast('⚠ '+e.message);}
+}
+
+function mapRow(r){
+  const d=new Date(r.created_at);
+  return{
+    id:r.id,office:r.office,person:r.person||'',
+    drink:r.drink||null,tasks:r.tasks?JSON.parse(r.tasks):[],
+    note:r.note||'',diet:r.diet,ownCup:r.own_cup,sugar:r.sugar,
+    status:r.status,tbName:r.tb_name||'',
+    schedTime:r.sched_time||null,
+    time:d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
+    dateStr:d.toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit'})
+  };
+}
+
+async function insertOrder(o){
+  return sbFetch('orders',{method:'POST',prefer:'return=representation',
+    body:JSON.stringify({office:o.office,person:o.person,drink:o.drink,
+      tasks:JSON.stringify(o.tasks),note:o.note,diet:o.diet,own_cup:o.ownCup,
+      sugar:o.sugar,status:o.schedTime?'scheduled':'new',sched_time:o.schedTime||null,tb_name:o.tbName||null})
+  });
+}
+
+async function updateOrderStatus(id,status,tbName){
+  const body={status};
+  if(tbName)body.tb_name=tbName;
+  return sbFetch('orders?id=eq.'+id,{method:'PATCH',prefer:'return=minimal',body:JSON.stringify(body)});
+}
+
+async function deleteCompleted(){
+  return sbFetch('orders?status=eq.done',{method:'DELETE',prefer:'return=minimal'});
+}
+
+/* ══ REALTIME ══ */
+function startRealtime(){
+  setConnStatus(false);
+  const ws=new WebSocket(`wss://kxcgdsgsxqhszptprklj.supabase.co/realtime/v1/websocket?apikey=${SB_KEY}&vsn=1.0.0`);
+  ws.onopen=()=>{
+    setConnStatus(true);
+    ws.send(JSON.stringify({topic:'realtime:public:orders',event:'phx_join',payload:{
+      config:{postgres_changes:[
+        {event:'INSERT',schema:'public',table:'orders'},
+        {event:'UPDATE',schema:'public',table:'orders'}
+      ]}
+    },ref:'1'}));
+  };
+  ws.onmessage=e=>{
+    try{
+      const msg=JSON.parse(e.data);
+      if(msg.event==='phx_reply'&&msg.payload?.status==='ok'&&msg.ref==='1'){
+        // Subscription confirmed — do nothing
+        return;
+      }
+      const data=msg.payload?.data;
+      if(data){
+        const rec=data.record;
+        const old_rec=data.old_record;
+        const eventType=data.type; // INSERT or UPDATE or DELETE
+        if(rec){
+          const o=mapRow({...rec,created_at:rec.created_at||new Date().toISOString()});
+          const existingIdx=orders.findIndex(x=>x.id===o.id);
+          if(existingIdx===-1){
+            orders.unshift(o);
+          } else {
+            orders[existingIdx]=o;
+          }
+          renderTBOrders();renderAdminOrders();updateStats();updateTBPending();
+          // Alert only on new INSERT with status=new
+          if(eventType==='INSERT'&&o.status==='new'){
+            if(document.getElementById('teamboyScreen').classList.contains('active')){
+              if(!o.tbName||o.tbName===currentTBName){
+                triggerAlert(o);
+              }
+            }
+          }
+        }
+      }
+    }catch(err){}
+  };
+  ws.onclose=()=>{setConnStatus(false);setTimeout(startRealtime,3000);};
+  ws.onerror=()=>setConnStatus(false);
+  realtimeCh=ws;
+}
+
+/* ══ SCHEDULED ORDERS CHECKER ══ */
+function checkScheduled(){
+  const now=new Date();
+  const hhmm=now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0');
+  orders.filter(o=>o.status==='scheduled'&&o.schedTime&&o.schedTime<=hhmm).forEach(async o=>{
+    await updateOrderStatus(o.id,'new');
+    o.status='new';
+    if(document.getElementById('teamboyScreen').classList.contains('active'))triggerAlert(o);
+  });
+  renderTBOrders();renderAdminOrders();updateStats();
+}
+setInterval(checkScheduled,30000);
+
+function setConnStatus(online){
+  const dot=document.getElementById('tbConnDot');const lbl=document.getElementById('tbConnLabel');
+  if(dot)dot.classList.toggle('online',online);
+  if(lbl)lbl.textContent=online?T[lang].connOnline:T[lang].connOffline;
+}
+
+/* ══ THEME ══ */
+function applyTheme(){
+  document.body.classList.toggle('dark',isDark);
+  document.getElementById('themeBtn').textContent=isDark?'☀️':'🌙';
+}
+function toggleTheme(){isDark=!isDark;localStorage.setItem('tbDark',isDark?'1':'0');applyTheme();}
+
+/* ══ LANGUAGE ══ */
+function setLang(l){
+  lang=l;
+  const map={en:'EN',ar:'AR',hi:'हि'};
+  document.querySelectorAll('.lang-btn').forEach(b=>b.classList.toggle('active',b.textContent.trim()===map[l]));
+  document.querySelectorAll('.screen.active').forEach(s=>s.classList.toggle('rtl',l==='ar'));
+  const t=T[l];
+  const ids=['e_title','e_sub','r_emp','r_emp_sub','r_tb','r_tb_sub','tbs_title','tbs_sub','tbs_sub2','tbs_sub3',
+    'emp_title','emp_sub','emp_officeLabel','l_officeNum','l_name',
+    'emp_schedLabel','l_schedToggle','l_schedTime',
+    'emp_drinkLabel','l_diet','l_cup','l_sugar','emp_tbLabel','emp_taskLabel','l_note','emp_send',
+    'tb_title','ab_text','ab_ack','tb_unavailLabel','tb_unavailHint',
+    'adm_title','adm_sub','s_total','s_pending','s_done','adm_menuLabel','adm_dataLabel','adm_clearDone','adm_filterLabel',
+    'f_all','f_new','f_done','f_sched','installBtnLabel'];
+  ids.forEach(id=>{const el=document.getElementById(id);if(el&&t[id]!==undefined)el.textContent=t[id];});
+  if(t.tbs_sub){['tbs_sub','tbs_sub2','tbs_sub3'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=t.tbs_sub;});}
+  applyTheme();
+  renderDrinkChips();renderTaskChipsEmp();renderUnavailChips();
+  renderTBOrders();renderAdminOrders();renderAdminMenu();updateStats();updateTBPending();
+}
+
+/* ══ NAVIGATION ══ */
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  const s=document.getElementById(id);s.classList.add('active');s.classList.toggle('rtl',lang==='ar');
+}
+function goEntry(){
+  stopAlert();
+  if(realtimeCh){realtimeCh.close();realtimeCh=null;}
+  tapCount=0;updateTapDots();currentTBName='';
+  // Reset to default purple theme
+  document.documentElement.style.setProperty('--purple','#534AB7');
+  document.documentElement.style.setProperty('--purple-light','#EEEDFE');
+  document.documentElement.style.setProperty('--purple-dark','#3C3489');
+  showScreen('entryScreen');
+}
+
+/* ══ PIN SYSTEM ══ */
+function askPin(target){
+  pinTarget=target;
+  const modal=document.getElementById('pinModal');
+  document.getElementById('pinInput').value='';
+  document.getElementById('pm_err').textContent='';
+  let ico='🔐',title='Enter PIN',sub='';
+  if(target==='employee'){ico='👤';title='Employee Access';}
+  else if(target==='teamboy_select'){ico='🛎';title='Ti Boy Access';}
+  else if(target.startsWith('tb_')){const n=target.split('_')[1];ico='🛎';title=n.charAt(0).toUpperCase()+n.slice(1);}
+  else if(target==='admin'){ico='⚙️';title='Admin Access';}
+  document.getElementById('pm_ico').textContent=ico;
+  document.getElementById('pm_title').textContent=title;
+  document.getElementById('pm_sub').textContent='Enter PIN';
+  modal.classList.add('show');
+  setTimeout(()=>document.getElementById('pinInput').focus(),150);
+}
+
+function checkPin(v){
+  if(v.length<4)return;
+  const target=pinTarget;
+  let correct=false;
+  if(target==='employee'&&v===PINS.employee)correct=true;
+  else if(target==='teamboy_select'&&v===PINS.teamboy){
+    // shared TB PIN accepted — show profile picker
+    document.getElementById('pinModal').classList.remove('show');
+    showScreen('tbSelectScreen');return;
+  }
+  else if(target==='tb_haseeb'&&v===PINS.tb_haseeb){correct=true;currentTBName='Haseeb';}
+  else if(target==='tb_saqib'&&v===PINS.tb_saqib){correct=true;currentTBName='Saqib';}
+  else if(target==='tb_rakib'&&v===PINS.tb_rakib){correct=true;currentTBName='Rakib';}
+  else if(target==='admin'&&v===PINS.admin)correct=true;
+
+  if(correct){
+    document.getElementById('pinModal').classList.remove('show');
+    if(target==='employee'){
+      selectedDrink=null;selectedTasksEmp=[];
+      showScreen('employeeScreen');
+      renderDrinkChips();renderTaskChipsEmp();
+      ['officeNum','personName','orderNote'].forEach(id=>document.getElementById(id).value='');
+      document.getElementById('drinkOptions').style.display='none';
+      document.getElementById('schedOptions').style.display='none';
+      document.getElementById('schedToggle').classList.remove('on');
+      selectedTBForOrder='';selectTB('');
+      document.getElementById('sugarRange').value=2;document.getElementById('sugarVal').textContent='2';
+      document.getElementById('dietToggle').classList.remove('on');document.getElementById('cupToggle').classList.remove('on');
+    } else if(target.startsWith('tb_')){
+      const av=document.getElementById('tbAvatar');
+      const tbColor=TB_COLORS[currentTBName]||'#534AB7';
+      if(av){av.textContent=currentTBName[0];av.style.background=tbColor;}
+      // Apply per-TB accent color
+      document.documentElement.style.setProperty('--purple',tbColor);
+      const lightMap={Haseeb:'#EEEDFE',Saqib:'#E1F5EE',Rakib:'#FAEEDA'};
+      const darkMap={Haseeb:'#3C3489',Saqib:'#0A4A38',Rakib:'#7A4A00'};
+      document.documentElement.style.setProperty('--purple-light',lightMap[currentTBName]||'#EEEDFE');
+      document.documentElement.style.setProperty('--purple-dark',darkMap[currentTBName]||'#3C3489');
+      showScreen('teamboyScreen');
+      loadOrders().then(()=>{renderUnavailChips();updateTBPending();});
+      startRealtime();
+    } else if(target==='admin'){
+      showScreen('adminScreen');
+      loadOrders().then(()=>renderAdminMenu());
+    }
+  } else if(v.length>=4){
+    document.getElementById('pm_err').textContent=T[lang].pm_err;
+    document.getElementById('pinInput').value='';
+    playError();
+  }
+}
+
+function closePin(){document.getElementById('pinModal').classList.remove('show');tapCount=0;updateTapDots();}
+
+/* ══ ADMIN SECRET: 5 TAPS ══ */
+function tapCoffee(){
+  tapCount++;updateTapDots();clearTimeout(tapTimer);
+  if(tapCount>=5){tapCount=0;updateTapDots();setTimeout(()=>askPin('admin'),150);return;}
+  tapTimer=setTimeout(()=>{tapCount=0;updateTapDots();},2000);
+}
+function updateTapDots(){for(let i=0;i<5;i++){const d=document.getElementById('td'+i);if(d)d.classList.toggle('lit',i<tapCount);}}
+
+/* ══ AUDIO ══ */
+let _actx=null;
+function getCtx(){
+  if(!_actx)try{_actx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return null;}
+  if(_actx.state==='suspended')_actx.resume();return _actx;
+}
+function unlockAudio(){
+  const ctx=getCtx();if(!ctx)return;
+  const b=ctx.createBuffer(1,1,22050);const s=ctx.createBufferSource();
+  s.buffer=b;s.connect(ctx.destination);s.start(0);
+  document.removeEventListener('touchstart',unlockAudio,true);
+  document.removeEventListener('mousedown',unlockAudio,true);
+}
+document.addEventListener('touchstart',unlockAudio,true);
+document.addEventListener('mousedown',unlockAudio,true);
+
+function playSend(){
+  const ctx=getCtx();if(!ctx)return;
+  [[0,523,0.3],[130,659,0.28],[260,784,0.25],[390,1047,0.2]].forEach(([d,f,v])=>{
+    const o=ctx.createOscillator();const g=ctx.createGain();
+    o.type='sine';o.frequency.value=f;o.connect(g);g.connect(ctx.destination);
+    const t=ctx.currentTime+d/1000;
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+0.06);g.gain.exponentialRampToValueAtTime(0.001,t+0.5);
+    o.start(t);o.stop(t+0.52);
+  });
+}
+function playBeep(){
+  // Vibrate on mobile
+  if(navigator.vibrate)navigator.vibrate([200,100,200,100,200]);
+  const ctx=getCtx();if(!ctx)return;
+  // Louder urgent alert: three rising tones
+  const now=ctx.currentTime;
+  [[0,660,0.5],[0.25,880,0.5],[0.5,1100,0.5],[0.75,880,0.4],[1.0,660,0.4],[1.25,880,0.5],[1.5,1100,0.5]].forEach(([d,f,v])=>{
+    const o=ctx.createOscillator();const g=ctx.createGain();
+    o.type='triangle';o.frequency.value=f;
+    o.connect(g);g.connect(ctx.destination);
+    const t=now+d;
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+0.04);g.gain.exponentialRampToValueAtTime(0.001,t+0.22);
+    o.start(t);o.stop(t+0.25);
+  });
+}
+function playError(){
+  const ctx=getCtx();if(!ctx)return;
+  const o=ctx.createOscillator();const g=ctx.createGain();
+  o.type='sawtooth';o.frequency.value=180;o.connect(g);g.connect(ctx.destination);
+  g.gain.setValueAtTime(0.2,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.28);
+  o.start(ctx.currentTime);o.stop(ctx.currentTime+0.3);
+}
+function startAlertLoop(){playBeep();alertLoop=setInterval(playBeep,3500);}
+function stopAlert(){if(alertLoop){clearInterval(alertLoop);alertLoop=null;}}
+function triggerAlert(order){
+  const t=T[lang];
+  document.getElementById('alertBanner').classList.add('show');
+  document.getElementById('ab_text').textContent=t.ab_text;
+  document.getElementById('ab_ack').textContent=t.ab_ack;
+  document.getElementById('ab_detail').textContent=order?(t.office+' '+order.office+(order.person?' — '+order.person:'')):'';
+  startAlertLoop();
+}
+function acknowledgeAlert(){
+  stopAlert();
+  document.getElementById('alertBanner').classList.remove('show');
+  // Reload orders to show latest state
+  loadOrders().then(()=>{renderTBOrders();updateTBPending();});
+}
+
+function updateTBPending(){
+  const p=orders.filter(o=>o.status==='new').length;
+  const el=document.getElementById('tb_pendingBadge');
+  if(p>0){el.textContent=p+' '+T[lang].pending;el.style.display='inline';}else el.style.display='none';
+}
+
+/* ══ SCHEDULE ══ */
+function toggleSched(el){
+  el.classList.toggle('on');
+  const show=el.classList.contains('on');
+  document.getElementById('schedOptions').style.display=show?'block':'none';
+  if(show){
+    const now=new Date();now.setMinutes(now.getMinutes()+15);
+    document.getElementById('schedTime').value=now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0');
+  }
+}
+
+/* ══ TB SELECTOR (employee form) ══ */
+function selectTB(name){
+  selectedTBForOrder=name;
+  const colors={Haseeb:'#534AB7',Saqib:'#0F6E56',Rakib:'#BA7517'};
+  ['Haseeb','Saqib','Rakib'].forEach(n=>{
+    const el=document.getElementById('tbc_'+n.toLowerCase());
+    if(!el)return;
+    if(n===name){
+      el.style.borderColor=colors[n];
+      el.style.boxShadow='0 0 0 3px '+colors[n]+'33';
+    } else {
+      el.style.borderColor='var(--border)';
+      el.style.boxShadow='none';
+    }
+  });
+  // Refresh chips to show this TB's availability
+  selectedDrink=null;
+  renderDrinkChips();renderTaskChipsEmp();
+}
+
+/* ══ CHIPS ══ */
+function renderDrinkChips(){
+  const c=document.getElementById('drinkChips');if(!c)return;c.innerHTML='';
+  const unavail=getUnavailForSelected();
+  T[lang].drinks.forEach((d,i)=>{
+    const isU=unavail.includes('drink_'+i);
+    const el=document.createElement('div');
+    el.className='chip'+(selectedDrink===i?' selected':'')+(isU?' unavailable':'');
+    el.textContent=d;el.onclick=()=>{if(!isU)selectDrink(i);};c.appendChild(el);
+  });
+}
+function renderTaskChipsEmp(){
+  const c=document.getElementById('taskChipsEmp');if(!c)return;c.innerHTML='';
+  const unavail=getUnavailForSelected();
+  T[lang].tasks.forEach((d,i)=>{
+    const isU=unavail.includes('task_'+i);
+    const el=document.createElement('div');
+    el.className='chip'+(selectedTasksEmp.includes(i)?' selected':'')+(isU?' unavailable':'');
+    el.textContent=d;el.onclick=()=>{if(!isU)toggleTaskEmp(i);};c.appendChild(el);
+  });
+}
+function renderUnavailChips(){
+  const c=document.getElementById('unavailChips');if(!c)return;c.innerHTML='';
+  const myUnavail=getUnavail(currentTBName);
+  [...T[lang].drinks.map((d,i)=>({key:'drink_'+i,label:d})),...T[lang].tasks.map((d,i)=>({key:'task_'+i,label:d}))].forEach(item=>{
+    const isU=myUnavail.includes(item.key);
+    const el=document.createElement('div');
+    el.className='chip'+(isU?' unavail-marked selected':'');
+    el.textContent=item.label;el.onclick=()=>toggleUnavail(item.key);c.appendChild(el);
+  });
+}
+function toggleUnavail(key){
+  const arr=[...getUnavail(currentTBName)];
+  const idx=arr.indexOf(key);
+  if(idx===-1)arr.push(key);else arr.splice(idx,1);
+  setUnavail(currentTBName,arr);
+  renderUnavailChips();
+}
+function selectDrink(i){
+  selectedDrink=i;renderDrinkChips();
+  document.getElementById('drinkOptions').style.display='block';
+  document.getElementById('sugarRow').style.display=i<=3?'flex':'none';
+}
+function toggleTaskEmp(i){
+  const idx=selectedTasksEmp.indexOf(i);if(idx===-1)selectedTasksEmp.push(i);else selectedTasksEmp.splice(idx,1);
+  renderTaskChipsEmp();
+}
+function toggleSw(el){el.classList.toggle('on');}
+
+/* ══ SUBMIT ══ */
+async function submitOrder(){
+  const office=document.getElementById('officeNum').value.trim();
+  if(!office){showToast('⚠ '+T[lang].l_officeNum);return;}
+  const t=T[lang];
+  const drink=selectedDrink!==null?t.drinks[selectedDrink]:null;
+  const tasks=selectedTasksEmp.map(i=>t.tasks[i]);
+  const note=document.getElementById('orderNote').value.trim();
+  if(!drink&&!tasks.length&&!note){showToast('⚠ Select at least one item');return;}
+  const isSched=document.getElementById('schedToggle').classList.contains('on');
+  let schedTime=null;
+  if(isSched){
+    const tv=document.getElementById('schedTime').value;
+    if(!tv){showToast('⚠ Set delivery time');return;}
+    const now=new Date();
+    const [hh,mm]=tv.split(':').map(Number);
+    const target=new Date();target.setHours(hh,mm,0,0);
+    const diff=(target-now)/60000;
+    if(diff<1){showToast('⚠ Time must be in the future');return;}
+    if(diff>60){showToast('⚠ Max 1 hour from now');return;}
+    schedTime=tv;
+  }
+  const btn=document.getElementById('emp_send');btn.disabled=true;
+  try{
+    await insertOrder({
+      office,person:document.getElementById('personName').value.trim(),
+      drink,tasks,note,
+      diet:document.getElementById('dietToggle').classList.contains('on'),
+      ownCup:document.getElementById('cupToggle').classList.contains('on'),
+      sugar:parseInt(document.getElementById('sugarRange').value),
+      schedTime,tbName:selectedTBForOrder||null
+    });
+    playSend();showToast(t.orderSent);
+    selectedDrink=null;selectedTasksEmp=[];
+    ['officeNum','personName','orderNote'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('drinkOptions').style.display='none';
+    document.getElementById('schedOptions').style.display='none';
+    document.getElementById('schedToggle').classList.remove('on');
+    document.getElementById('sugarRange').value=2;document.getElementById('sugarVal').textContent='2';
+    document.getElementById('dietToggle').classList.remove('on');document.getElementById('cupToggle').classList.remove('on');
+    renderDrinkChips();renderTaskChipsEmp();
+  }catch(e){showToast('⚠ Error: '+e.message);}
+  btn.disabled=false;
+}
+
+/* ══ RENDER ══ */
+function drinkLine(o,t){
+  if(!o.drink)return'';
+  const isTea=['Tea','tea','شاي','चाय','पुदीना','तुलसी'].some(k=>o.drink.includes(k));
+  return'☕ '+o.drink+(isTea?' · '+o.sugar+' spoons':'')+(o.diet?' · Diet':'')+(o.ownCup?' · Personal cup':'')+'<br>';
+}
+
+function orderCard(o,t,showBadge){
+  const isSched=o.status==='scheduled';
+  const badgeClass=isSched?'badge-sched':o.status==='new'?'badge-new':'badge-done';
+  const badgeLabel=isSched?t.scheduled:o.status==='new'?t.s_pending:t.s_done;
+  return`<div class="order-item">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+      <div style="flex:1">
+        <div class="order-header">
+          <span style="font-size:15px;font-weight:700;color:var(--text)">${t.office} ${o.office}</span>
+          ${o.person?`<span style="font-size:13px;color:var(--text2)">— ${o.person}</span>`:''}
+          ${showBadge?`<span class="badge ${badgeClass}">${badgeLabel}</span>`:''}
+          ${o.tbName?`<span style="font-size:11px;padding:2px 7px;border-radius:8px;background:var(--bg);color:var(--text2);border:1px solid var(--border)">${o.tbName}</span>`:''}
+        </div>
+        <div class="order-meta">
+          ${drinkLine(o,t)}
+          ${o.tasks&&o.tasks.length?'📋 '+o.tasks.join(', ')+'<br>':''}
+          ${o.note?'💬 '+o.note+'<br>':''}
+          ${o.schedTime?'🕐 '+o.schedTime+'<br>':''}
+          <span style="color:var(--text3)">⏱ ${o.time} · ${o.dateStr}</span>
+        </div>
+      </div>
+      ${o.status==='new'?`<button class="btn-done" onclick="${showBadge?'markDoneAdmin':'markDoneTB'}(${o.id})">${t.markDone}</button>`:''}
+    </div>
+  </div>`;
+}
+
+function renderTBOrders(){
+  const el=document.getElementById('tbOrdersList');if(!el)return;
+  const t=T[lang];
+  const list=orders.filter(o=>
+    o.status==='new' &&
+    (!o.tbName || !currentTBName || o.tbName===currentTBName)
+  );
+  el.innerHTML=list.length?list.map(o=>orderCard(o,t,false)).join(''):`<div style="padding:22px;text-align:center;color:var(--text2);font-size:14px">${t.noOrders}</div>`;
+  updateTBPending();
+}
+
+async function markDoneTB(id){
+  // Optimistic update first
+  orders=orders.map(o=>o.id===id?{...o,status:'done',tbName:currentTBName||o.tbName}:o);
+  renderTBOrders();updateStats();updateTBPending();
+  try{await updateOrderStatus(id,'done',currentTBName);}catch(e){
+    // Revert if failed
+    orders=orders.map(o=>o.id===id?{...o,status:'new'}:o);
+    renderTBOrders();updateStats();updateTBPending();
+    showToast('⚠ Error updating');
+  }
+}
+
+function renderAdminOrders(){
+  const el=document.getElementById('adminOrdersList');if(!el)return;
+  const t=T[lang];
+  const tbF=document.getElementById('filterTB')?.value||'';
+  const dateF=document.getElementById('filterDate')?.value||'';
+  let list=currentFilter==='all'?orders:orders.filter(o=>o.status===(currentFilter==='new'?'new':currentFilter==='done'?'done':'scheduled'));
+  if(tbF)list=list.filter(o=>o.tbName===tbF);
+  if(dateF)list=list.filter(o=>o.dateStr&&o.dateStr.includes(dateF));
+  el.innerHTML=list.length?list.map(o=>orderCard(o,t,true)).join(''):`<div style="padding:22px;text-align:center;color:var(--text2);font-size:14px">${t.noOrders}</div>`;
+}
+
+async function markDoneAdmin(id){
+  try{await updateOrderStatus(id,'done',null);}catch(e){}
+  orders=orders.map(o=>o.id===id?{...o,status:'done'}:o);
+  renderAdminOrders();updateStats();
+}
+
+function renderAdminMenu(){
+  const el=document.getElementById('adminMenuList');if(!el)return;const t=T[lang];
+  const all=[...T[lang].drinks.map((d,i)=>({key:'drink_'+i,label:d,cat:'Drink'})),...T[lang].tasks.map((d,i)=>({key:'task_'+i,label:d,cat:'Task'}))];
+  const tbNames=['Haseeb','Saqib','Rakib'];
+  const tbColors={Haseeb:'#534AB7',Saqib:'#0F6E56',Rakib:'#BA7517'};
+  el.innerHTML=tbNames.map(tbN=>{
+    const unavail=getUnavail(tbN);
+    return`<div style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="width:22px;height:22px;border-radius:50%;background:${tbColors[tbN]};color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">${tbN[0]}</div>
+        <span style="font-size:13px;font-weight:600;color:var(--text)">${tbN}</span>
+      </div>
+      ${all.map(item=>{
+        const isU=unavail.includes(item.key);
+        return`<div class="menu-row" style="padding:8px 0"><div><div class="menu-name" style="font-size:13px">${item.label}</div></div><div class="avail-pill ${isU?'unavail':'avail'}" onclick="adminToggleItem('${item.key}','${tbN}')">${isU?t.unavailable:t.available}</div></div>`;
+      }).join('')}
+    </div>`;
+  }).join('<div style="height:1px;background:var(--border);margin:8px 0"></div>');
+}
+function adminToggleItem(key,tbName){
+  const arr=[...getUnavail(tbName)];
+  const idx=arr.indexOf(key);if(idx===-1)arr.push(key);else arr.splice(idx,1);
+  setUnavail(tbName,arr);renderAdminMenu();
+}
+function updateStats(){
+  document.getElementById('statTotal').textContent=orders.length;
+  document.getElementById('statNew').textContent=orders.filter(o=>o.status==='new').length;
+  document.getElementById('statDone').textContent=orders.filter(o=>o.status==='done').length;
+}
+function setFilter(f,btn){
+  currentFilter=f;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');renderAdminOrders();
+}
+async function clearDone(){
+  try{await deleteCompleted();}catch(e){}
+  orders=orders.filter(o=>o.status!=='done');
+  renderAdminOrders();updateStats();showToast(T[lang].orderCleared);
+}
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600);
+}
+
+/* ══ INSTALL ══ */
+function handleInstall(){
+  if(isIOS){document.getElementById('iosModal').classList.add('show');}
+  else if(deferredPrompt){
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(r=>{if(r.outcome==='accepted')deferredPrompt=null;});
+  } else {
+    if(isStandalone){showToast('Already installed!');}
+    else{document.getElementById('iosModal').classList.add('show');}
+  }
+}
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;});
+
+/* ══ REFRESH FUNCTIONS ══ */
+function refreshPage(){
+  renderDrinkChips();renderTaskChipsEmp();
+  showToast('✓ Refreshed');
+}
+function refreshTB(){
+  const btn=document.querySelector('#teamboyScreen .refresh-btn');
+  if(btn)btn.style.transform='rotate(360deg)';
+  loadOrders().then(()=>{
+    renderUnavailChips();updateTBPending();
+    showToast('✓ Refreshed');
+    setTimeout(()=>{if(btn)btn.style.transform='';},400);
+  });
+}
+function refreshAdmin(){
+  loadOrders().then(()=>{renderAdminMenu();showToast('✓ Refreshed');});
+}
+
+/* ══ INIT ══ */
+applyTheme();updateStats();
+</script>
+</body>
+</html>.card{background:var(--card);border-radius:16px;border:1px solid var(--border);padding:16px 18px;margin-bottom:12px;box-shadow:0 2px 8px var(--shadow)}
+.section-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px}
+label{font-size:13px;color:var(--text2);display:block;margin-bottom:5px}
+input[type=text],input[type=time],textarea,select{width:100%;padding:10px 13px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:15px;margin-bottom:13px;-webkit-appearance:none;outline:none;transition:border-color 0.2s;font-family:inherit}
+input[type=text]:focus,input[type=time]:focus,textarea:focus,select:focus{border-color:var(--purple)}
+textarea{resize:none}
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px}
+.chip{padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:var(--card);cursor:pointer;font-size:13px;color:var(--text2);transition:all 0.15s;user-select:none}
+.chip.selected{background:var(--purple);border-color:var(--purple);color:#fff}
+.chip.unavailable{background:var(--red-light);border-color:var(--red);color:var(--red);text-decoration:line-through;opacity:0.7;cursor:default}
+.chip.unavail-marked{background:var(--red-light);border-color:var(--red);color:var(--red)}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.toggle-row label{font-size:14px;color:var(--text);margin:0}
+.toggle{width:44px;height:24px;border-radius:12px;background:var(--border);position:relative;cursor:pointer;transition:background 0.2s;flex-shrink:0}
+.toggle.on{background:var(--purple)}
+.toggle::after{content:'';width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left 0.2s;box-shadow:0 1px 4px rgba(0,0,0,0.25)}
+.toggle.on::after{left:22px}
+.sugar-row{display:flex;align-items:center;gap:12px;margin-bottom:13px}
+.sugar-row label{margin:0;white-space:nowrap;font-size:13px;color:var(--text2);min-width:90px}
+input[type=range]{flex:1;accent-color:var(--purple)}
+.sugar-val{font-size:15px;font-weight:600;min-width:22px;text-align:center;color:var(--text)}
+.btn-main{width:100%;padding:14px;border-radius:12px;border:none;background:var(--purple);color:#fff;font-size:16px;font-weight:600;cursor:pointer;margin-top:4px}
+.btn-main:active{opacity:0.85;transform:scale(0.99)}
+.btn-main:disabled{opacity:0.6;cursor:not-allowed}
+.btn-secondary{background:none;border:1px solid var(--border);border-radius:10px;padding:7px 14px;color:var(--text2);font-size:13px;cursor:pointer}
+.btn-done{padding:7px 14px;border-radius:10px;border:1px solid var(--teal);background:transparent;color:var(--teal);font-size:13px;cursor:pointer;white-space:nowrap;font-weight:500}
+.btn-done:active{background:var(--teal-light)}
+/* Fixed back button — always centered, never shifts */
+.back-btn-wrap{display:flex;justify-content:center;margin-bottom:14px}
+.back-btn{background:var(--card);border:1.5px solid var(--border);border-radius:20px;padding:7px 24px;color:var(--text2);font-size:13px;cursor:pointer;font-weight:500}
+.role-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0}
+.role-card{background:var(--card);border:1.5px solid var(--border);border-radius:18px;padding:24px 12px;text-align:center;cursor:pointer;transition:border-color 0.15s,transform 0.1s;box-shadow:0 2px 12px var(--shadow)}
+.role-card:active{transform:scale(0.96)}
+.role-card .ico{font-size:34px;margin-bottom:10px}
+.role-card .lbl{font-size:14px;font-weight:700;color:var(--text)}
+.role-card .sub{font-size:11px;color:var(--text3);margin-top:4px}
+#coffeeWrap{text-align:center;padding:36px 0 0;cursor:pointer;user-select:none}
+#coffeeIcon{font-size:56px;display:block;line-height:1;transition:transform 0.08s}
+#coffeeIcon:active{transform:scale(0.88)}
+.tap-dots{display:flex;gap:6px;justify-content:center;margin:10px 0 0}
+.tap-dot{width:7px;height:7px;border-radius:50%;background:transparent;transition:background 0.18s}
+.tap-dot.lit{background:var(--purple)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:none;align-items:center;justify-content:center;z-index:200;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.modal-overlay.show{display:flex}
+.pin-box{background:var(--card);border-radius:22px;padding:30px 24px;width:300px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,0.3)}
+.pin-box .ico{font-size:34px;margin-bottom:10px}
+.pin-box h3{font-size:17px;font-weight:700;color:var(--text);margin-bottom:6px}
+.pin-box p{font-size:13px;color:var(--text2);margin-bottom:16px}
+.pin-input{text-align:center;font-size:26px;letter-spacing:8px;padding:11px;border-radius:12px;border:1px solid var(--border);background:var(--bg);color:var(--text);width:100%;margin-bottom:8px;outline:none;-webkit-text-security:disc;text-security:disc}
+.pin-input:focus{border-color:var(--purple)}
+.pin-err{font-size:12px;color:var(--red);min-height:18px;margin-bottom:8px}
+.stat-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
+.stat-card{background:var(--bg);border-radius:12px;padding:12px;text-align:center;border:1px solid var(--border)}
+.stat-num{font-size:24px;font-weight:700;color:var(--text)}
+.stat-lbl{font-size:11px;color:var(--text3);margin-top:2px}
+.filter-row{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.filter-btn{flex:1;min-width:60px;padding:8px;text-align:center;cursor:pointer;font-size:12px;font-weight:500;color:var(--text2);background:var(--card);border:1px solid var(--border);border-radius:10px}
+.filter-btn.active{background:var(--purple);border-color:var(--purple);color:#fff}
+.order-item{padding:14px;border-bottom:1px solid var(--border)}
+.order-item:last-child{border-bottom:none}
+.order-header{display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap}
+.badge{font-size:11px;padding:3px 9px;border-radius:10px;font-weight:600}
+.badge-new{background:var(--purple-light);color:var(--purple-dark)}
+.badge-done{background:var(--teal-light);color:var(--teal)}
+.badge-sched{background:var(--amber-light);color:var(--amber)}
+.order-meta{font-size:12px;color:var(--text2);line-height:1.9}
+.alert-banner{background:var(--purple-light);border:2px solid var(--purple);border-radius:14px;padding:14px 16px;margin-bottom:12px;display:none;align-items:center;justify-content:space-between;gap:10px}
+.alert-banner.show{display:flex;animation:alertPulse 1.3s infinite}
+@keyframes alertPulse{0%,100%{border-color:var(--purple)}50%{border-color:var(--purple-dark);box-shadow:0 0 0 4px rgba(83,74,183,0.18)}}
+.alert-text{font-size:14px;font-weight:700;color:var(--purple-dark)}
+.alert-detail{font-size:12px;color:var(--purple);margin-top:3px}
+.btn-ack{padding:9px 16px;border-radius:10px;border:none;background:var(--purple);color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap}
+.menu-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--border)}
+.menu-row:last-child{border-bottom:none}
+.menu-name{font-size:14px;font-weight:500;color:var(--text)}
+.menu-cat{font-size:11px;color:var(--text3);margin-top:2px}
+.avail-pill{font-size:11px;padding:5px 13px;border-radius:10px;cursor:pointer;border:1px solid;font-weight:600}
+.avail-pill.avail{background:var(--teal-light);border-color:var(--teal);color:var(--teal)}
+.avail-pill.unavail{background:var(--red-light);border-color:var(--red);color:var(--red)}
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#18182A;color:#fff;padding:12px 22px;border-radius:14px;font-size:14px;z-index:400;opacity:0;transition:opacity 0.3s;pointer-events:none;white-space:nowrap;max-width:90vw;font-weight:500}
+.toast.show{opacity:1}
+.pending-badge{background:var(--purple-light);color:var(--purple-dark);font-size:12px;padding:3px 10px;border-radius:10px;font-weight:600}
+.hint-box{font-size:12px;color:var(--text2);padding:8px 12px;background:var(--bg);border-radius:10px;border:1px solid var(--border);margin-bottom:10px}
+.conn-dot{width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block;margin-right:5px}
+.conn-dot.online{background:#22C55E}
+.sched-box{background:var(--amber-light);border:1px solid var(--amber);border-radius:12px;padding:12px;margin-bottom:12px}
+.tb-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;flex-shrink:0}
+.install-btn{width:100%;padding:12px;border-radius:12px;border:1.5px dashed var(--purple);background:var(--purple-light);color:var(--purple-dark);font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:4px}
+select{-webkit-appearance:auto}
+.refresh-btn{background:var(--card);border:1.5px solid var(--border);border-radius:20px;padding:6px 13px;font-size:16px;cursor:pointer;color:var(--text2);line-height:1;transition:transform 0.3s}
+.refresh-btn:active{transform:rotate(180deg)}
+</style>
+</head>
+<body>
+
+<button class="theme-btn" id="themeBtn" onclick="toggleTheme()">🌙</button>
+<div class="toast" id="toast"></div>
+
+<!-- PIN Modal -->
+<div class="modal-overlay" id="pinModal">
+  <div class="pin-box">
+    <div class="ico" id="pm_ico">🔐</div>
+    <h3 id="pm_title">Access</h3>
+    <p id="pm_sub">Enter PIN</p>
+    <input class="pin-input" type="tel" id="pinInput" maxlength="6" placeholder="••••" oninput="checkPin(this.value)" autocomplete="off" inputmode="numeric" pattern="[0-9]*">
+    <div class="pin-err" id="pm_err"></div>
+    <button class="btn-secondary" style="width:100%" onclick="closePin()">Cancel</button>
+  </div>
+</div>
+
+<!-- iOS Install Modal -->
+<div class="modal-overlay" id="iosModal">
+  <div class="pin-box" style="width:320px">
+    <div style="font-size:32px;margin-bottom:10px">📲</div>
+    <h3 id="ios_title" style="margin-bottom:14px">Add to Home Screen</h3>
+    <div style="text-align:left;font-size:13px;color:var(--text2);line-height:1.9">
+      <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
+        <span style="background:var(--purple);color:#fff;border-radius:50%;width:22px;height:22px;min-width:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">1</span>
+        <span id="ios_step1">Tap the <strong>Share</strong> button at the bottom of Safari</span>
+      </div>
+      <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
+        <span style="background:var(--purple);color:#fff;border-radius:50%;width:22px;height:22px;min-width:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">2</span>
+        <span id="ios_step2">Tap <strong>"Add to Home Screen"</strong></span>
+      </div>
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <span style="background:var(--purple);color:#fff;border-radius:50%;width:22px;height:22px;min-width:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">3</span>
+        <span id="ios_step3">Tap <strong>"Add"</strong></span>
+      </div>
+    </div>
+    <button class="btn-main" style="margin-top:20px" onclick="document.getElementById('iosModal').classList.remove('show')">Got it ✓</button>
+  </div>
+</div>
+
+<!-- ══ ENTRY ══ -->
+<div id="entryScreen" class="screen active app">
+  <div id="coffeeWrap" onclick="tapCoffee()">
+    <span id="coffeeIcon">☕</span>
+    <div class="tap-dots">
+      <div class="tap-dot" id="td0"></div><div class="tap-dot" id="td1"></div>
+      <div class="tap-dot" id="td2"></div><div class="tap-dot" id="td3"></div>
+      <div class="tap-dot" id="td4"></div>
+    </div>
+  </div>
+  <div style="text-align:center;margin-top:14px">
+    <p style="font-size:22px;font-weight:700;color:var(--text)" id="e_title">Office Service</p>
+    <p style="font-size:14px;color:var(--text2);margin-top:6px" id="e_sub">Select your role</p>
+  </div>
+  <div class="lang-bar" style="margin-top:20px">
+    <button class="lang-btn active" onclick="setLang('en')">EN</button>
+    <button class="lang-btn" onclick="setLang('ar')">AR</button>
+    <button class="lang-btn" onclick="setLang('hi')">हि</button>
+  </div>
+  <div class="role-grid">
+    <div class="role-card" onclick="askPin('employee')">
+      <div class="ico">👤</div>
+      <div class="lbl" id="r_emp">Employee</div>
+      <div class="sub" id="r_emp_sub">Place order</div>
+    </div>
+    <div class="role-card" onclick="askPin('teamboy_select')">
+      <div class="ico">🛎</div>
+      <div class="lbl" id="r_tb">Ti Boy</div>
+      <div class="sub" id="r_tb_sub">Incoming orders</div>
+    </div>
+  </div>
+  <button class="install-btn" id="installBtn" onclick="handleInstall()">
+    <span style="font-size:18px">📲</span>
+    <span id="installBtnLabel">Add to Home Screen</span>
+  </button>
+</div>
+
+<!-- ══ TEAMBOY SELECT ══ -->
+<div id="tbSelectScreen" class="screen app">
+  <div class="back-btn-wrap" style="display:flex;justify-content:center;gap:8px">
+    <button class="refresh-btn" onclick="location.reload()">↻</button>
+    <button class="back-btn" onclick="goEntry()">← Back</button>
+  </div>
+  <div style="text-align:center;margin-bottom:20px">
+    <p style="font-size:18px;font-weight:700;color:var(--text)" id="tbs_title">Select Profile</p>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <div class="role-card" style="display:flex;align-items:center;gap:14px;padding:16px 18px;text-align:left" onclick="askPin('tb_haseeb')">
+      <div class="tb-avatar" style="background:#534AB7">H</div>
+      <div><div class="lbl" style="font-size:15px">Haseeb</div><div class="sub" id="tbs_sub">Ti Boy</div></div>
+    </div>
+    <div class="role-card" style="display:flex;align-items:center;gap:14px;padding:16px 18px;text-align:left" onclick="askPin('tb_saqib')">
+      <div class="tb-avatar" style="background:#0F6E56">S</div>
+      <div><div class="lbl" style="font-size:15px">Saqib</div><div class="sub" id="tbs_sub2">Ti Boy</div></div>
+    </div>
+    <div class="role-card" style="display:flex;align-items:center;gap:14px;padding:16px 18px;text-align:left" onclick="askPin('tb_rakib')">
+      <div class="tb-avatar" style="background:#BA7517">R</div>
+      <div><div class="lbl" style="font-size:15px">Rakib</div><div class="sub" id="tbs_sub3">Ti Boy</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ EMPLOYEE ══ -->
+<div id="employeeScreen" class="screen app">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div class="lang-bar" style="margin:0">
+      <button class="lang-btn active" onclick="setLang('en')">EN</button>
+      <button class="lang-btn" onclick="setLang('ar')">AR</button>
+      <button class="lang-btn" onclick="setLang('hi')">हि</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="refresh-btn" onclick="refreshPage()">↻</button>
+      <button class="back-btn" onclick="goEntry()">← Back</button>
+    </div>
+  </div>
+  <div class="card" style="text-align:center;padding:18px">
+    <div style="font-size:30px">☕</div>
+    <p style="font-size:19px;font-weight:700;color:var(--text);margin-top:8px" id="emp_title">Place an Order</p>
+    <p style="font-size:13px;color:var(--text2);margin-top:4px" id="emp_sub">Office Service Request</p>
+  </div>
+  <div class="card">
+    <p class="section-title" id="emp_officeLabel">Office Info</p>
+    <label id="l_officeNum">Office Number</label>
+    <input type="text" id="officeNum" inputmode="numeric">
+    <label id="l_name">Your Name (optional)</label>
+    <input type="text" id="personName">
+  </div>
+  <!-- Ti Boy Selector -->
+  <div class="card">
+    <p class="section-title" id="emp_tbLabel">Directed To</p>
+    <div style="display:flex;gap:8px">
+      <div class="tb-chip" id="tbc_haseeb" onclick="selectTB('Haseeb')" style="flex:1;padding:10px;border-radius:12px;border:1.5px solid var(--border);background:var(--card);text-align:center;cursor:pointer;transition:all 0.15s">
+        <div style="width:28px;height:28px;border-radius:50%;background:#534AB7;color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;margin:0 auto 4px">H</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text)">Haseeb</div>
+      </div>
+      <div class="tb-chip" id="tbc_saqib" onclick="selectTB('Saqib')" style="flex:1;padding:10px;border-radius:12px;border:1.5px solid var(--border);background:var(--card);text-align:center;cursor:pointer;transition:all 0.15s">
+        <div style="width:28px;height:28px;border-radius:50%;background:#0F6E56;color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;margin:0 auto 4px">S</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text)">Saqib</div>
+      </div>
+      <div class="tb-chip" id="tbc_rakib" onclick="selectTB('Rakib')" style="flex:1;padding:10px;border-radius:12px;border:1.5px solid var(--border);background:var(--card);text-align:center;cursor:pointer;transition:all 0.15s">
+        <div style="width:28px;height:28px;border-radius:50%;background:#BA7517;color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;margin:0 auto 4px">R</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text)">Rakib</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schedule -->
+  <div class="card">
+    <p class="section-title" id="emp_schedLabel">Schedule</p>
+    <div class="toggle-row">
+      <label id="l_schedToggle">Schedule for later</label>
+      <div class="toggle" id="schedToggle" onclick="toggleSched(this)"></div>
+    </div>
+    <div id="schedOptions" style="display:none">
+      <div class="sched-box">
+        <label id="l_schedTime">Delivery time (max 1 hour from now)</label>
+        <input type="time" id="schedTime" style="margin-bottom:0">
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <p class="section-title" id="emp_drinkLabel">Drink</p>
+    <div class="chips" id="drinkChips"></div>
+    <div id="drinkOptions" style="display:none">
+      <div class="toggle-row">
+        <label id="l_diet">Diet / Sugar-free</label>
+        <div class="toggle" id="dietToggle" onclick="toggleSw(this)"></div>
+      </div>
+      <div class="toggle-row">
+        <label id="l_cup">Personal Cup</label>
+        <div class="toggle" id="cupToggle" onclick="toggleSw(this)"></div>
+      </div>
+      <div class="sugar-row" id="sugarRow">
+        <label id="l_sugar">Sugar (spoons)</label>
+        <input type="range" min="0" max="5" value="2" id="sugarRange" step="1" oninput="document.getElementById('sugarVal').textContent=this.value">
+        <span class="sugar-val" id="sugarVal">2</span>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <p class="section-title" id="emp_taskLabel">Tasks</p>
+    <div class="chips" id="taskChipsEmp"></div>
+  </div>
+  <div class="card">
+    <label id="l_note">Additional Note</label>
+    <textarea id="orderNote" rows="3" style="margin-bottom:0"></textarea>
+  </div>
+  <button class="btn-main" id="emp_send" onclick="submitOrder()">Send Order</button>
+  <div style="height:24px"></div>
+</div>
+
+<!-- ══ TEAM BOY ══ -->
+<div id="teamboyScreen" class="screen app">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div class="lang-bar" style="margin:0">
+      <button class="lang-btn active" onclick="setLang('en')">EN</button>
+      <button class="lang-btn" onclick="setLang('ar')">AR</button>
+      <button class="lang-btn" onclick="setLang('hi')">हि</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="refresh-btn" onclick="refreshTB()">↻</button>
+      <button class="back-btn" onclick="goEntry()">← Back</button>
+    </div>
+  </div>
+  <div class="card" style="padding:13px 18px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="tb-avatar" id="tbAvatar" style="background:#534AB7">H</div>
+        <div>
+          <p style="font-size:16px;font-weight:700;color:var(--text)" id="tb_title">Incoming Orders</p>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">
+            <span class="conn-dot" id="tbConnDot"></span><span id="tbConnLabel">Connecting...</span>
+          </div>
+        </div>
+      </div>
+      <span class="pending-badge" id="tb_pendingBadge" style="display:none"></span>
+    </div>
+  </div>
+  <div class="alert-banner" id="alertBanner">
+    <div>
+      <div class="alert-text" id="ab_text">🔔 New order!</div>
+      <div class="alert-detail" id="ab_detail"></div>
+    </div>
+    <button class="btn-ack" id="ab_ack" onclick="acknowledgeAlert()">Received ✓</button>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden">
+    <div id="tbOrdersList"></div>
+  </div>
+  <div class="card" style="margin-top:4px">
+    <p class="section-title" id="tb_unavailLabel">Mark Unavailable</p>
+    <div class="hint-box" id="tb_unavailHint">Tap any item to mark as unavailable</div>
+    <div class="chips" id="unavailChips"></div>
+  </div>
+  <div style="height:24px"></div>
+</div>
+
+<!-- ══ ADMIN ══ -->
+<div id="adminScreen" class="screen app">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div class="lang-bar" style="margin:0">
+      <button class="lang-btn active" onclick="setLang('en')">EN</button>
+      <button class="lang-btn" onclick="setLang('ar')">AR</button>
+      <button class="lang-btn" onclick="setLang('hi')">हि</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="refresh-btn" onclick="refreshAdmin()">↻</button>
+      <button class="back-btn" onclick="goEntry()">← Back</button>
+    </div>
+  </div>
+  <div class="card" style="padding:13px 18px">
+    <p style="font-size:17px;font-weight:700;color:var(--text)" id="adm_title">Admin Dashboard</p>
+    <p style="font-size:12px;color:var(--text2);margin-top:3px" id="adm_sub">Moe's Office</p>
+  </div>
+  <div class="stat-row">
+    <div class="stat-card"><div class="stat-num" id="statTotal">0</div><div class="stat-lbl" id="s_total">Total</div></div>
+    <div class="stat-card"><div class="stat-num" style="color:var(--purple)" id="statNew">0</div><div class="stat-lbl" id="s_pending">Pending</div></div>
+    <div class="stat-card"><div class="stat-num" style="color:var(--teal)" id="statDone">0</div><div class="stat-lbl" id="s_done">Done</div></div>
+  </div>
+  <!-- Filters -->
+  <div class="filter-row">
+    <button class="filter-btn active" id="f_all" onclick="setFilter('all',this)">All</button>
+    <button class="filter-btn" id="f_new" onclick="setFilter('new',this)">Pending</button>
+    <button class="filter-btn" id="f_done" onclick="setFilter('done',this)">Done</button>
+    <button class="filter-btn" id="f_sched" onclick="setFilter('scheduled',this)">Scheduled</button>
+  </div>
+  <!-- Filter by Ti Boy -->
+  <div class="card" style="padding:12px 14px;margin-bottom:8px">
+    <p class="section-title" id="adm_filterLabel">Filter by Ti Boy / Date</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <select id="filterTB" onchange="renderAdminOrders()" style="flex:1;margin-bottom:0;min-width:120px">
+        <option value="">All Ti Boys</option>
+        <option value="Haseeb">Haseeb</option>
+        <option value="Saqib">Saqib</option>
+        <option value="Rakib">Rakib</option>
+      </select>
+      <input type="text" id="filterDate" placeholder="Date (e.g. 13/04)" oninput="renderAdminOrders()" style="flex:1;margin-bottom:0;min-width:100px">
+    </div>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden">
+    <div id="adminOrdersList"></div>
+  </div>
+  <div class="card" style="margin-top:4px">
+    <p class="section-title" id="adm_menuLabel">Menu Management</p>
+    <div id="adminMenuList"></div>
+  </div>
+  <div class="card">
+    <p class="section-title" id="adm_dataLabel">Data</p>
+    <button onclick="clearDone()" class="btn-secondary" style="width:100%;padding:10px;text-align:center" id="adm_clearDone">Clear completed orders</button>
+  </div>
+  <div style="height:24px"></div>
+</div>
+
+<script>
+/* ══ CONFIG ══ */
+const SB_URL='https://kxcgdsgsxqhszptprklj.supabase.co';
+const SB_KEY='sb_publishable_SVjZWY5SepxvrMnAxhH2QQ_NRSMUiYw';
+
+/* PINs */
+const PINS={
+  employee:'1234',
+  teamboy:'5678',      // shared Ti Boy entry PIN
+  tb_haseeb:'2001',
+  tb_saqib:'2002',
+  tb_rakib:'2003',
+  admin:'9999'
+};
+
+const TB_COLORS={Haseeb:'#534AB7',Saqib:'#0F6E56',Rakib:'#BA7517'};
+
+/* ══ TRANSLATIONS ══ */
+const T={
+  en:{
+    e_title:'Office Service',e_sub:'Select your role',
+    r_emp:'Employee',r_emp_sub:'Place order',r_tb:'Ti Boy',r_tb_sub:'Incoming orders',
+    tbs_title:'Select Profile',tbs_sub:'Ti Boy',
+    pm_cancel:'Cancel',pm_err:'Wrong PIN',
+    emp_title:'Place an Order',emp_sub:'Office Service Request',emp_officeLabel:'OFFICE INFO',
+    l_officeNum:'Office Number',l_name:'Your Name (optional)',
+    emp_schedLabel:'SCHEDULE',l_schedToggle:'Schedule for later',l_schedTime:'Delivery time (max 1 hour from now)',
+    emp_drinkLabel:'DRINK',l_diet:'Diet / Sugar-free',l_cup:'Personal Cup',l_sugar:'Sugar (spoons)',
+    emp_tbLabel:'Directed To',
+    emp_tbLabel:'Directed To',
+    emp_taskLabel:'TASKS',l_note:'Additional Note',emp_send:'Send Order',
+    tb_title:'Incoming Orders',
+    ab_text:'🔔 New order!',ab_ack:'Received ✓',
+    tb_unavailLabel:'MARK UNAVAILABLE',tb_unavailHint:'Tap any item to mark as unavailable',
+    adm_title:'Admin Dashboard',adm_sub:"Moe's Office",
+    s_total:'Total',s_pending:'Pending',s_done:'Done',
+    adm_menuLabel:'MENU MANAGEMENT',adm_dataLabel:'DATA',adm_clearDone:'Clear completed orders',
+    adm_filterLabel:'FILTER',
+    f_all:'All',f_new:'Pending',f_done:'Done',f_sched:'Scheduled',
+    drinks:['Tea','Mint Tea','Basil Tea','Mint+Basil Tea','Turkish Coffee','Black Coffee','Coffee + Milk'],
+    tasks:['Bring from downstairs','Put in fridge','Other task'],
+    orderSent:'✓ Order sent!',markDone:'Done ✓',noOrders:'No orders yet',
+    office:'Office',available:'Available',unavailable:'Unavailable',pending:'pending',
+    orderCleared:'Completed orders cleared',scheduled:'Scheduled',
+    connOnline:'Live',connOffline:'Offline',
+    installLabel:'Add to Home Screen'
+  },
+  ar:{
+    e_title:'خدمة المكتب',e_sub:'اختر دورك',
+    r_emp:'موظف',r_emp_sub:'تقديم طلب',r_tb:'تي بوي',r_tb_sub:'استقبال الطلبات',
+    tbs_title:'اختر البروفايل',tbs_sub:'تي بوي',
+    pm_cancel:'إلغاء',pm_err:'رقم خاطئ',
+    emp_title:'تقديم طلب',emp_sub:'طلب خدمة مكتبية',emp_officeLabel:'معلومات المكتب',
+    l_officeNum:'رقم المكتب',l_name:'اسمك (اختياري)',
+    emp_schedLabel:'جدولة',l_schedToggle:'جدولة الطلب لوقت لاحق',l_schedTime:'وقت التسليم (بحد أقصى ساعة)',
+    emp_drinkLabel:'المشروب',l_diet:'دايت / بدون سكر',l_cup:'كاستي الخاصة',l_sugar:'ملاعق السكر',
+    emp_tbLabel:'موجه إلى',
+    emp_tbLabel:'موجه إلى',
+    emp_taskLabel:'المهام',l_note:'ملاحظة إضافية',emp_send:'إرسال الطلب',
+    tb_title:'الطلبات الواردة',
+    ab_text:'🔔 طلب جديد!',ab_ack:'تم الاستلام ✓',
+    tb_unavailLabel:'تعليم غير المتوفر',tb_unavailHint:'اضغط أي صنف لتعليمه كغير متوفر',
+    adm_title:'لوحة الإدارة',adm_sub:'مكتب موي',
+    s_total:'الكل',s_pending:'معلق',s_done:'مكتمل',
+    adm_menuLabel:'إدارة القائمة',adm_dataLabel:'البيانات',adm_clearDone:'مسح المكتملة',
+    adm_filterLabel:'فلتر',
+    f_all:'الكل',f_new:'معلق',f_done:'مكتمل',f_sched:'مجدول',
+    drinks:['شاي عادي','شاي نعناع','شاي حبق','شاي نعناع وحبق','قهوة تركي','قهوة سوداء','قهوة بالحليب'],
+    tasks:['جيب من تحت','حط بالثلاجة','مهمة أخرى'],
+    orderSent:'✓ تم الإرسال!',markDone:'تم ✓',noOrders:'لا توجد طلبات',
+    office:'مكتب',available:'متوفر',unavailable:'غير متوفر',pending:'معلق',
+    orderCleared:'تم المسح',scheduled:'مجدول',
+    connOnline:'متصل',connOffline:'غير متصل',
+    installLabel:'أضف للشاشة الرئيسية'
+  },
+  hi:{
+    e_title:'ऑफिस सेवा',e_sub:'भूमिका चुनें',
+    r_emp:'कर्मचारी',r_emp_sub:'ऑर्डर दें',r_tb:'टी बॉय',r_tb_sub:'ऑर्डर देखें',
+    tbs_title:'प्रोफाइल चुनें',tbs_sub:'टी बॉय',
+    pm_cancel:'रद्द करें',pm_err:'गलत PIN',
+    emp_title:'ऑर्डर दें',emp_sub:'ऑफिस सेवा',emp_officeLabel:'ऑफिस जानकारी',
+    l_officeNum:'ऑफिस नंबर',l_name:'नाम (वैकल्पिक)',
+    emp_schedLabel:'शेड्यूल',l_schedToggle:'बाद के लिए शेड्यूल करें',l_schedTime:'डिलीवरी समय (अधिकतम 1 घंटे)',
+    emp_drinkLabel:'पेय',l_diet:'डाइट / शुगर-फ्री',l_cup:'अपना कप',l_sugar:'चीनी के चम्मच',
+    emp_tbLabel:'किसे भेजें',
+    emp_tbLabel:'किसे भेजें',
+    emp_taskLabel:'काम',l_note:'अतिरिक्त नोट',emp_send:'ऑर्डर भेजें',
+    tb_title:'आने वाले ऑर्डर',
+    ab_text:'🔔 नया ऑर्डर!',ab_ack:'मिल गया ✓',
+    tb_unavailLabel:'अनुपलब्ध',tb_unavailHint:'अनुपलब्ध आइटम टैप करें',
+    adm_title:'एडमिन डैशबोर्ड',adm_sub:'Moe का ऑफिस',
+    s_total:'कुल',s_pending:'बाकी',s_done:'हो गया',
+    adm_menuLabel:'मेनू',adm_dataLabel:'डेटा',adm_clearDone:'पूरे ऑर्डर हटाएं',
+    adm_filterLabel:'फिल्टर',
+    f_all:'सब',f_new:'बाकी',f_done:'हो गया',f_sched:'शेड्यूल',
+    drinks:['चाय','पुदीना चाय','तुलसी चाय','पुदीना+तुलसी','तुर्की कॉफी','ब्लैक कॉफी','दूध वाली कॉफी'],
+    tasks:['नीचे से लाओ','फ्रिज में रखो','अन्य काम'],
+    orderSent:'✓ भेज दिया!',markDone:'हो गया ✓',noOrders:'कोई ऑर्डर नहीं',
+    office:'ऑफिस',available:'उपलब्ध',unavailable:'अनुपलब्ध',pending:'बाकी',
+    orderCleared:'हटा दिए',scheduled:'शेड्यूल',
+    connOnline:'लाइव',connOffline:'ऑफलाइन',
+    installLabel:'होम स्क्रीन पर जोड़ें'
+  }
+};
+
+/* ══ STATE ══ */
+let lang='en';
+let isDark=localStorage.getItem('tbDark')==='1';
+let selectedDrink=null;
+let selectedTBForOrder='';
+let selectedTasksEmp=[];
+let orders=[];
+// Per-TB unavailability: {Haseeb:[...], Saqib:[...], Rakib:[...]}
+let tbUnavail=JSON.parse(localStorage.getItem('tbUnavailPerTB')||'{}');
+function getUnavail(tbName){return tbUnavail[tbName]||[];}
+function setUnavail(tbName,arr){tbUnavail[tbName]=arr;localStorage.setItem('tbUnavailPerTB',JSON.stringify(tbUnavail));}
+// For employee view — based on selected TB
+function getUnavailForSelected(){return selectedTBForOrder?getUnavail(selectedTBForOrder):[];}
+let currentFilter='all';
+let alertLoop=null;
+let realtimeCh=null;
+let tapCount=0;let tapTimer=null;
+let pinTarget=null;
+let currentTBName='';
+let deferredPrompt=null;
+const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+const isStandalone=window.matchMedia('(display-mode:standalone)').matches||window.navigator.standalone;
+
+// saveUnavail replaced by setUnavail(tbName, arr)
+
+/* ══ SUPABASE ══ */
+async function sbFetch(path,opts={}){
+  const headers={
+    'apikey':SB_KEY,
+    'Authorization':'Bearer '+SB_KEY,
+    'Content-Type':'application/json',
+    'Prefer':opts.prefer||'return=representation'
+  };
+  if(opts.headers)Object.assign(headers,opts.headers);
+  const fetchOpts={...opts,headers};
+  delete fetchOpts.prefer;
+  const res=await fetch(SB_URL+'/rest/v1/'+path,fetchOpts);
+  if(!res.ok){const e=await res.text();throw new Error(e);}
+  const txt=await res.text();return txt?JSON.parse(txt):null;
+}
+
+async function loadOrders(){
+  try{
+    const data=await sbFetch('orders?select=*&order=created_at.desc&limit=200');
+    orders=data.map(mapRow);
+    renderTBOrders();renderAdminOrders();updateStats();updateTBPending();
   }catch(e){showToast('⚠ Load error');}
 }
 
