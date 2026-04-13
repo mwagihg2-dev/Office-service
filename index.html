@@ -569,8 +569,10 @@ async function insertOrder(o){
   });
 }
 
-async function updateOrderStatus(id,status){
-  return sbFetch('orders?id=eq.'+id,{method:'PATCH',prefer:'return=minimal',body:JSON.stringify({status})});
+async function updateOrderStatus(id,status,tbName){
+  const body={status};
+  if(tbName)body.tb_name=tbName;
+  return sbFetch('orders?id=eq.'+id,{method:'PATCH',prefer:'return=minimal',body:JSON.stringify(body)});
 }
 
 async function deleteCompleted(){
@@ -965,13 +967,13 @@ function orderCard(o,t,showBadge){
 function renderTBOrders(){
   const el=document.getElementById('tbOrdersList');if(!el)return;
   const t=T[lang];
-  const list=orders.filter(o=>o.status==='new'&&(!currentTBName||!o.tbName||o.tbName===currentTBName));
+  const list=orders.filter(o=>o.status==='new'&&(!o.tbName||!currentTBName||o.tbName===currentTBName));
   el.innerHTML=list.length?list.map(o=>orderCard(o,t,false)).join(''):`<div style="padding:22px;text-align:center;color:var(--text2);font-size:14px">${t.noOrders}</div>`;
   updateTBPending();
 }
 
 async function markDoneTB(id){
-  try{await updateOrderStatus(id,'done');}catch(e){}
+  try{await updateOrderStatus(id,'done',currentTBName);}catch(e){}
   orders=orders.map(o=>o.id===id?{...o,status:'done',tbName:currentTBName||o.tbName}:o);
   renderTBOrders();updateStats();
 }
@@ -988,7 +990,7 @@ function renderAdminOrders(){
 }
 
 async function markDoneAdmin(id){
-  try{await updateOrderStatus(id,'done');}catch(e){}
+  try{await updateOrderStatus(id,'done',null);}catch(e){}
   orders=orders.map(o=>o.id===id?{...o,status:'done'}:o);
   renderAdminOrders();updateStats();
 }
