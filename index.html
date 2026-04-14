@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -130,9 +131,11 @@ select{-webkit-appearance:auto}
 <body>
 
 <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">🌙</button>
+
 <div class="toast" id="toast"></div>
 
 <!-- PIN Modal -->
+
 <div class="modal-overlay" id="pinModal">
   <div class="pin-box">
     <div class="ico" id="pm_ico">🔐</div>
@@ -145,6 +148,7 @@ select{-webkit-appearance:auto}
 </div>
 
 <!-- iOS Install Modal -->
+
 <div class="modal-overlay" id="iosModal">
   <div class="pin-box" style="width:320px">
     <div style="font-size:32px;margin-bottom:10px">📲</div>
@@ -168,6 +172,7 @@ select{-webkit-appearance:auto}
 </div>
 
 <!-- ══ ENTRY ══ -->
+
 <div id="entryScreen" class="screen active app">
   <div id="coffeeWrap" onclick="tapCoffee()">
     <span id="coffeeIcon">☕</span>
@@ -205,6 +210,7 @@ select{-webkit-appearance:auto}
 </div>
 
 <!-- ══ TEAMBOY SELECT ══ -->
+
 <div id="tbSelectScreen" class="screen app">
   <div class="back-btn-wrap" style="display:flex;justify-content:center;gap:8px">
     <button class="refresh-btn" onclick="location.reload()">↻</button>
@@ -230,6 +236,7 @@ select{-webkit-appearance:auto}
 </div>
 
 <!-- ══ EMPLOYEE ══ -->
+
 <div id="employeeScreen" class="screen app">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
     <div class="lang-bar" style="margin:0">
@@ -274,6 +281,7 @@ select{-webkit-appearance:auto}
   </div>
 
   <!-- Schedule -->
+
   <div class="card">
     <p class="section-title" id="emp_schedLabel">Schedule</p>
     <div class="toggle-row">
@@ -319,6 +327,7 @@ select{-webkit-appearance:auto}
 </div>
 
 <!-- ══ TEAM BOY ══ -->
+
 <div id="teamboyScreen" class="screen app">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
     <div class="lang-bar" style="margin:0">
@@ -364,6 +373,7 @@ select{-webkit-appearance:auto}
 </div>
 
 <!-- ══ ADMIN ══ -->
+
 <div id="adminScreen" class="screen app">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
     <div class="lang-bar" style="margin:0">
@@ -611,31 +621,36 @@ let lastKnownIds=new Set();
 function startRealtime(){
   setConnStatus(true);
   if(pollInterval)clearInterval(pollInterval);
-  // Initial load
-  loadOrders();
-  // Poll every 5 seconds
+
+  // Seed lastKnownIds with current orders so we don't re-alert
+  orders.forEach(o=>lastKnownIds.add(o.id));
+
   pollInterval=setInterval(async()=>{
     try{
       const data=await sbFetch('orders?select=*&order=created_at.desc&limit=200');
-      const newOrders=data.map(mapRow);
-      // Find truly new orders (INSERT)
-      newOrders.forEach(o=>{
-        if(!lastKnownIds.has(o.id)&&o.status==='new'){
+      const fetched=data.map(mapRow);
+
+      // Detect new orders not seen before
+      fetched.forEach(o=>{
+        if(!lastKnownIds.has(o.id)){
           lastKnownIds.add(o.id);
-          if(document.getElementById('teamboyScreen').classList.contains('active')){
-            if(!o.tbName||o.tbName===currentTBName){
-              triggerAlert(o);
+          if(o.status==='new'){
+            if(document.getElementById('teamboyScreen').classList.contains('active')){
+              if(!o.tbName||o.tbName===currentTBName){
+                triggerAlert(o);
+              }
             }
           }
-        } else {
-          lastKnownIds.add(o.id);
         }
       });
-      orders=newOrders;
+
+      // Always trust Supabase as source of truth
+      orders=fetched;
       renderTBOrders();renderAdminOrders();updateStats();updateTBPending();
       setConnStatus(true);
     }catch(e){setConnStatus(false);}
   },5000);
+
   realtimeCh={close:()=>{if(pollInterval){clearInterval(pollInterval);pollInterval=null;}}};
 }
 
@@ -1021,15 +1036,31 @@ function renderTBOrders(){
 }
 
 async function markDoneTB(id){
-  // Optimistic update
+  // Pause polling to prevent race condition
+  if(pollInterval){clearInterval(pollInterval);pollInterval=null;}
+
+  // Update locally first
   orders=orders.map(o=>o.id===id?{...o,status:'done',tbName:currentTBName||o.tbName}:o);
   renderTBOrders();updateStats();updateTBPending();
+
   try{
+    // Update in Supabase
     await updateOrderStatus(id,'done',currentTBName);
+    // Wait briefly then restart polling
+    setTimeout(()=>{
+      if(document.getElementById('teamboyScreen').classList.contains('active')){
+        startRealtime();
+      }
+    },1500);
   }catch(e){
-    showToast('⚠ '+e.message);
-    // Reload to sync
-    loadOrders();
+    showToast('⚠ Failed — retrying');
+    // Reload from Supabase to sync
+    await loadOrders();
+    setTimeout(()=>{
+      if(document.getElementById('teamboyScreen').classList.contains('active')){
+        startRealtime();
+      }
+    },1500);
   }
 }
 
@@ -1128,5 +1159,6 @@ function refreshAdmin(){
 /* ══ INIT ══ */
 applyTheme();updateStats();
 </script>
+
 </body>
 </html>
