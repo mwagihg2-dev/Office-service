@@ -588,10 +588,21 @@ async function sbFetch(path,opts={}){
 
 async function loadOrders(){
   try{
-    const data=await sbFetch('orders?select=*&order=created_at.desc&limit=200');
+    const res=await fetch(SB_URL+'/rest/v1/orders?select=*&order=created_at.desc&limit=200',{
+      headers:{
+        'apikey':SB_KEY,
+        'Authorization':'Bearer '+SB_KEY,
+        'Content-Type':'application/json'
+      }
+    });
+    if(!res.ok)throw new Error(await res.text());
+    const data=await res.json();
     orders=data.map(mapRow);
     renderTBOrders();renderAdminOrders();updateStats();updateTBPending();
-  }catch(e){showToast('⚠ '+e.message);}
+  }catch(e){
+    console.error('loadOrders:',e);
+    setConnStatus(false);
+  }
 }
 
 function mapRow(r){
@@ -608,11 +619,30 @@ function mapRow(r){
 }
 
 async function insertOrder(o){
-  return sbFetch('orders',{method:'POST',prefer:'return=representation',
-    body:JSON.stringify({office:o.office,person:o.person,drink:o.drink,
-      tasks:JSON.stringify(o.tasks),note:o.note,diet:o.diet,own_cup:o.ownCup,
-      sugar:o.sugar,status:o.schedTime?'scheduled':'new',sched_time:o.schedTime||null,tb_name:o.tbName||null})
+  const res=await fetch(SB_URL+'/rest/v1/orders',{
+    method:'POST',
+    headers:{
+      'apikey':SB_KEY,
+      'Authorization':'Bearer '+SB_KEY,
+      'Content-Type':'application/json',
+      'Prefer':'return=minimal'
+    },
+    body:JSON.stringify({
+      office:o.office,
+      person:o.person||'',
+      drink:o.drink||null,
+      tasks:JSON.stringify(o.tasks||[]),
+      note:o.note||'',
+      diet:o.diet||false,
+      own_cup:o.ownCup||false,
+      sugar:o.sugar||0,
+      status:o.schedTime?'scheduled':'new',
+      sched_time:o.schedTime||null,
+      tb_name:o.tbName||null
+    })
   });
+  if(!res.ok){const e=await res.text();throw new Error(e);}
+  return true;
 }
 
 async function updateOrderStatus(id,status,tbName){
@@ -650,8 +680,11 @@ function startRealtime(){
 
   pollInterval=setInterval(async()=>{
     try{
-      const data=await sbFetch('orders?select=*&order=created_at.desc&limit=200');
-      const fetched=data.map(mapRow);
+      const pollRes=await fetch(SB_URL+'/rest/v1/orders?select=*&order=created_at.desc&limit=200',{
+        headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'}
+      });
+      if(!pollRes.ok)throw new Error('poll failed');
+      const fetched=(await pollRes.json()).map(mapRow);
 
       // Detect new orders not seen before
       fetched.forEach(o=>{
@@ -993,27 +1026,40 @@ async function submitOrder(){
     if(diff>60){showToast('⚠ Max 1 hour from now');return;}
     schedTime=tv;
   }
-  const btn=document.getElementById('emp_send');btn.disabled=true;
+  const btn=document.getElementById('emp_send');
+  btn.disabled=true;
+  btn.textContent='Sending...';
   try{
     await insertOrder({
-      office,person:document.getElementById('personName').value.trim(),
+      office,
+      person:document.getElementById('personName').value.trim(),
       drink,tasks,note,
       diet:document.getElementById('dietToggle').classList.contains('on'),
       ownCup:document.getElementById('cupToggle').classList.contains('on'),
       sugar:parseInt(document.getElementById('sugarRange').value),
-      schedTime,tbName:selectedTBForOrder||null
+      schedTime,
+      tbName:selectedTBForOrder||null
     });
-    playSend();showToast(t.orderSent);
+    playSend();
+    showToast(t.orderSent);
     selectedDrink=null;selectedTasksEmp=[];
     ['officeNum','personName','orderNote'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('drinkOptions').style.display='none';
     document.getElementById('schedOptions').style.display='none';
     document.getElementById('schedToggle').classList.remove('on');
-    document.getElementById('sugarRange').value=2;document.getElementById('sugarVal').textContent='2';
-    document.getElementById('dietToggle').classList.remove('on');document.getElementById('cupToggle').classList.remove('on');
+    document.getElementById('sugarRange').value=2;
+    document.getElementById('sugarVal').textContent='2';
+    document.getElementById('dietToggle').classList.remove('on');
+    document.getElementById('cupToggle').classList.remove('on');
+    selectedTBForOrder='';selectTB('');
     renderDrinkChips();renderTaskChipsEmp();
-  }catch(e){showToast('⚠ Error: '+e.message);}
-  btn.disabled=false;
+  }catch(e){
+    console.error('submitOrder error:',e);
+    showToast('⚠ '+e.message);
+  }finally{
+    btn.disabled=false;
+    btn.textContent=T[lang].emp_send||'Send Order';
+  }
 }
 
 /* ══ RENDER ══ */
