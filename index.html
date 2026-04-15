@@ -31,7 +31,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .app{max-width:480px;margin:0 auto;padding:12px 12px 40px}
 .screen{display:none}.screen.active{display:block}
 .rtl{direction:rtl;text-align:right}
-.theme-btn{position:fixed;top:14px;right:14px;z-index:150;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:5px 13px;font-size:13px;cursor:pointer;color:var(--text2);box-shadow:0 2px 8px var(--shadow)}
+.theme-btn{background:var(--card);border:1.5px solid var(--border);border-radius:20px;padding:6px 13px;font-size:13px;cursor:pointer;color:var(--text2)}
 .lang-bar{display:flex;gap:6px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
 .lang-btn{padding:5px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--card);cursor:pointer;font-size:12px;color:var(--text2);font-weight:500}
 .lang-btn.active{background:var(--purple);border-color:var(--purple);color:#fff}
@@ -130,8 +130,6 @@ select{-webkit-appearance:auto}
 </head>
 <body>
 
-<button class="theme-btn" id="themeBtn" onclick="toggleTheme()">🌙</button>
-
 <div class="toast" id="toast"></div>
 
 <!-- PIN Modal -->
@@ -186,10 +184,11 @@ select{-webkit-appearance:auto}
     <p style="font-size:22px;font-weight:700;color:var(--text)" id="e_title">Office Service</p>
     <p style="font-size:14px;color:var(--text2);margin-top:6px" id="e_sub">Select your role</p>
   </div>
-  <div class="lang-bar" style="margin-top:20px">
+  <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:20px;flex-wrap:wrap">
     <button class="lang-btn active" onclick="setLang('en')">EN</button>
     <button class="lang-btn" onclick="setLang('ar')">AR</button>
     <button class="lang-btn" onclick="setLang('hi')">हि</button>
+    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">🌙</button>
   </div>
   <div class="role-grid">
     <div class="role-card" onclick="askPin('employee')">
@@ -213,6 +212,7 @@ select{-webkit-appearance:auto}
 
 <div id="tbSelectScreen" class="screen app">
   <div class="back-btn-wrap" style="display:flex;justify-content:center;gap:8px">
+    <button class="theme-btn" onclick="toggleTheme()">🌙</button>
     <button class="refresh-btn" onclick="location.reload()">↻</button>
     <button class="back-btn" onclick="goEntry()">← Back</button>
   </div>
@@ -245,6 +245,7 @@ select{-webkit-appearance:auto}
       <button class="lang-btn" onclick="setLang('hi')">हि</button>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
+      <button class="theme-btn" onclick="toggleTheme()">🌙</button>
       <button class="refresh-btn" onclick="refreshPage()">↻</button>
       <button class="back-btn" onclick="goEntry()">← Back</button>
     </div>
@@ -336,6 +337,7 @@ select{-webkit-appearance:auto}
       <button class="lang-btn" onclick="setLang('hi')">हि</button>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
+      <button class="theme-btn" onclick="toggleTheme()">🌙</button>
       <button class="refresh-btn" onclick="refreshTB()">↻</button>
       <button class="back-btn" onclick="goEntry()">← Back</button>
     </div>
@@ -382,6 +384,7 @@ select{-webkit-appearance:auto}
       <button class="lang-btn" onclick="setLang('hi')">हि</button>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
+      <button class="theme-btn" onclick="toggleTheme()">🌙</button>
       <button class="refresh-btn" onclick="refreshAdmin()">↻</button>
       <button class="back-btn" onclick="goEntry()">← Back</button>
     </div>
@@ -636,6 +639,7 @@ async function deleteCompleted(){
 /* ══ POLLING (replaces WebSocket) ══ */
 let pollInterval=null;
 let lastKnownIds=new Set();
+let confirmedDone=new Set(); // IDs we've confirmed done locally
 
 function startRealtime(){
   setConnStatus(true);
@@ -663,8 +667,9 @@ function startRealtime(){
         }
       });
 
-      // Always trust Supabase as source of truth
-      orders=fetched;
+      // Override any confirmed-done items from Supabase (prevents flicker)
+      const merged=fetched.map(o=>confirmedDone.has(o.id)?{...o,status:'done'}:o);
+      orders=merged;
       renderTBOrders();renderAdminOrders();updateStats();updateTBPending();
       setConnStatus(true);
     }catch(e){setConnStatus(false);}
@@ -695,7 +700,8 @@ function setConnStatus(online){
 /* ══ THEME ══ */
 function applyTheme(){
   document.body.classList.toggle('dark',isDark);
-  document.getElementById('themeBtn').textContent=isDark?'☀️':'🌙';
+  const icon=isDark?'☀️':'🌙';
+  document.querySelectorAll('.theme-btn').forEach(b=>b.textContent=icon);
 }
 function toggleTheme(){isDark=!isDark;localStorage.setItem('tbDark',isDark?'1':'0');applyTheme();}
 
@@ -729,7 +735,7 @@ function goEntry(){
   stopAlert();
   if(realtimeCh){realtimeCh.close();realtimeCh=null;}
   if(pollInterval){clearInterval(pollInterval);pollInterval=null;}
-  tapCount=0;updateTapDots();currentTBName='';lastKnownIds=new Set();
+  tapCount=0;updateTapDots();currentTBName='';lastKnownIds=new Set();confirmedDone=new Set();
   document.documentElement.style.setProperty('--purple','#534AB7');
   document.documentElement.style.setProperty('--purple-light','#EEEDFE');
   document.documentElement.style.setProperty('--purple-dark','#3C3489');
@@ -1046,6 +1052,7 @@ function orderCard(o,t,showBadge){
 function renderTBOrders(){
   const el=document.getElementById('tbOrdersList');if(!el)return;
   const t=T[lang];
+  // Strictly show only 'new' status — 'done' orders never shown here
   const list=orders.filter(o=>
     o.status==='new' &&
     (!o.tbName || !currentTBName || o.tbName===currentTBName)
@@ -1058,7 +1065,8 @@ async function markDoneTB(id){
   // Stop polling
   if(pollInterval){clearInterval(pollInterval);pollInterval=null;}
 
-  // Remove from local list immediately
+  // Mark as confirmed done locally — persists through polling
+  confirmedDone.add(id);
   orders=orders.map(o=>o.id===id?{...o,status:'done',tbName:currentTBName||o.tbName}:o);
   renderTBOrders();updateStats();updateTBPending();
 
