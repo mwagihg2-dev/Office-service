@@ -561,18 +561,26 @@ const isStandalone=window.matchMedia('(display-mode:standalone)').matches||windo
 
 /* ══ SUPABASE ══ */
 async function sbFetch(path,opts={}){
-  const headers={
-    'apikey':SB_KEY,
-    'Authorization':'Bearer '+SB_KEY,
-    'Content-Type':'application/json',
-    'Prefer':opts.prefer||'return=representation'
-  };
-  if(opts.headers)Object.assign(headers,opts.headers);
-  const fetchOpts={...opts,headers};
-  delete fetchOpts.prefer;
-  const res=await fetch(SB_URL+'/rest/v1/'+path,fetchOpts);
-  if(!res.ok){const e=await res.text();throw new Error(e);}
-  const txt=await res.text();return txt?JSON.parse(txt):null;
+  const prefer=opts.prefer||'return=representation';
+  const method=opts.method||'GET';
+  const body=opts.body||undefined;
+  const res=await fetch(SB_URL+'/rest/v1/'+path,{
+    method,
+    headers:{
+      'apikey':SB_KEY,
+      'Authorization':'Bearer '+SB_KEY,
+      'Content-Type':'application/json',
+      'Prefer':prefer
+    },
+    body
+  });
+  if(!res.ok){
+    const e=await res.text();
+    console.error('sbFetch error',path,e);
+    throw new Error(e);
+  }
+  const txt=await res.text();
+  return txt?JSON.parse(txt):null;
 }
 
 async function loadOrders(){
@@ -607,7 +615,18 @@ async function insertOrder(o){
 async function updateOrderStatus(id,status,tbName){
   const body={status};
   if(tbName)body.tb_name=tbName;
-  return sbFetch('orders?id=eq.'+id,{method:'PATCH',prefer:'return=minimal',body:JSON.stringify(body)});
+  const res=await fetch(SB_URL+'/rest/v1/orders?id=eq.'+id,{
+    method:'PATCH',
+    headers:{
+      'apikey':SB_KEY,
+      'Authorization':'Bearer '+SB_KEY,
+      'Content-Type':'application/json',
+      'Prefer':'return=minimal'
+    },
+    body:JSON.stringify(body)
+  });
+  if(!res.ok){const e=await res.text();throw new Error(e);}
+  return true;
 }
 
 async function deleteCompleted(){
@@ -1036,32 +1055,36 @@ function renderTBOrders(){
 }
 
 async function markDoneTB(id){
-  // Pause polling to prevent race condition
+  // Stop polling
   if(pollInterval){clearInterval(pollInterval);pollInterval=null;}
 
-  // Update locally first
+  // Remove from local list immediately
   orders=orders.map(o=>o.id===id?{...o,status:'done',tbName:currentTBName||o.tbName}:o);
   renderTBOrders();updateStats();updateTBPending();
 
-  try{
-    // Update in Supabase
-    await updateOrderStatus(id,'done',currentTBName);
-    // Wait briefly then restart polling
-    setTimeout(()=>{
-      if(document.getElementById('teamboyScreen').classList.contains('active')){
-        startRealtime();
-      }
-    },1500);
-  }catch(e){
-    showToast('⚠ Failed — retrying');
-    // Reload from Supabase to sync
-    await loadOrders();
-    setTimeout(()=>{
-      if(document.getElementById('teamboyScreen').classList.contains('active')){
-        startRealtime();
-      }
-    },1500);
+  // Update Supabase
+  let success=false;
+  for(let attempt=0;attempt<3;attempt++){
+    try{
+      await updateOrderStatus(id,'done',currentTBName);
+      success=true;
+      break;
+    }catch(e){
+      console.error('markDone attempt',attempt,e);
+      await new Promise(r=>setTimeout(r,500));
+    }
   }
+
+  if(!success){
+    showToast('⚠ Could not update — check connection');
+  }
+
+  // Restart polling after 2s
+  setTimeout(()=>{
+    if(document.getElementById('teamboyScreen').classList.contains('active')){
+      startRealtime();
+    }
+  },2000);
 }
 
 function renderAdminOrders(){
