@@ -640,7 +640,9 @@ async function insertOrder(o){
 async function updateOrderStatus(id,status,tbName){
   const body={status};
   if(tbName)body.tb_name=tbName;
-  const res=await fetch(SB_URL+'/rest/v1/orders?id=eq.'+id,{
+  // Cast id to number to avoid type mismatch with Supabase bigint
+  const numId=Number(id);
+  const res=await fetch(SB_URL+'/rest/v1/orders?id=eq.'+numId,{
     method:'PATCH',
     headers:{
       'apikey':SB_KEY,
@@ -650,7 +652,11 @@ async function updateOrderStatus(id,status,tbName){
     },
     body:JSON.stringify(body)
   });
-  if(!res.ok){const e=await res.text();throw new Error(e);}
+  if(!res.ok){
+    const e=await res.text();
+    console.error('updateOrderStatus failed:',numId,e);
+    throw new Error(e);
+  }
   return true;
 }
 
@@ -1063,10 +1069,20 @@ function drinkLine(o,t){
 
 function orderCard(o,t,showBadge){
   const isSched=o.status==='scheduled';
-  const badgeClass=isSched?'badge-sched':o.status==='new'?'badge-new':'badge-done';
-  const badgeLabel=isSched?t.scheduled:o.status==='new'?t.s_pending:t.s_done;
-  return`<div class="order-item">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+  const isDone=o.status==='done';
+  const badgeClass=isSched?'badge-sched':isDone?'badge-done':'badge-new';
+  const badgeLabel=isSched?t.scheduled:isDone?t.s_done:t.s_pending;
+  const fnName=showBadge?'markDoneAdmin':'markDoneTB';
+  const checkId='chk_'+o.id;
+  return`<div class="order-item" id="order_${o.id}" style="opacity:${confirmedDone.has(o.id)?'0.45':'1'};transition:opacity 0.3s">
+    <div style="display:flex;align-items:flex-start;gap:12px">
+      ${!isDone&&!isSched?`
+      <label style="margin-top:3px;cursor:pointer;flex-shrink:0">
+        <input type="checkbox" id="${checkId}"
+          ${confirmedDone.has(o.id)?'checked':''}
+          onchange="handleCheck(this,${o.id},'${fnName}')"
+          style="width:20px;height:20px;accent-color:var(--teal);cursor:pointer;border-radius:4px">
+      </label>`:'<div style="width:20px;flex-shrink:0"></div>'}
       <div style="flex:1">
         <div class="order-header">
           <span style="font-size:15px;font-weight:700;color:var(--text)">${t.office} ${o.office}</span>
@@ -1082,9 +1098,18 @@ function orderCard(o,t,showBadge){
           <span style="color:var(--text3)">⏱ ${o.time} · ${o.dateStr}</span>
         </div>
       </div>
-      ${o.status==='new'?`<button class="btn-done" onclick="${showBadge?'markDoneAdmin':'markDoneTB'}(${o.id})">${t.markDone}</button>`:''}
     </div>
   </div>`;
+}
+
+async function handleCheck(checkbox,id,fnName){
+  if(!checkbox.checked){checkbox.checked=false;return;}
+  checkbox.disabled=true;
+  // Visual feedback immediately
+  const item=document.getElementById('order_'+id);
+  if(item)item.style.opacity='0.4';
+  if(fnName==='markDoneTB')await markDoneTB(id);
+  else await markDoneAdmin(id);
 }
 
 function renderTBOrders(){
@@ -1100,37 +1125,22 @@ function renderTBOrders(){
 }
 
 async function markDoneTB(id){
-  // Stop polling
-  if(pollInterval){clearInterval(pollInterval);pollInterval=null;}
-
-  // Mark as confirmed done locally — persists through polling
+  // Add to confirmed done — polling will respect this
   confirmedDone.add(id);
   orders=orders.map(o=>o.id===id?{...o,status:'done',tbName:currentTBName||o.tbName}:o);
   renderTBOrders();updateStats();updateTBPending();
 
-  // Update Supabase
-  let success=false;
-  for(let attempt=0;attempt<3;attempt++){
+  // Try up to 3 times to update Supabase
+  for(let i=0;i<3;i++){
     try{
-      await updateOrderStatus(id,'done',currentTBName);
-      success=true;
-      break;
+      await updateOrderStatus(Number(id),'done',currentTBName);
+      return; // success
     }catch(e){
-      console.error('markDone attempt',attempt,e);
-      await new Promise(r=>setTimeout(r,500));
+      console.error('markDoneTB attempt',i+1,'failed:',e.message);
+      await new Promise(r=>setTimeout(r,800));
     }
   }
-
-  if(!success){
-    showToast('⚠ Could not update — check connection');
-  }
-
-  // Restart polling after 2s
-  setTimeout(()=>{
-    if(document.getElementById('teamboyScreen').classList.contains('active')){
-      startRealtime();
-    }
-  },2000);
+  showToast('⚠ Sync failed — will retry on refresh');
 }
 
 function renderAdminOrders(){
